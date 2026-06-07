@@ -115,8 +115,12 @@ def render_unified_income_splits_modal():
                 
                 if not past_dates_df.empty:
                     past_dates_df['Effective Date'] = pd.to_datetime(past_dates_df['Effective Date']).dt.date
-                    final_df = pd.concat([final_df, past_dates_df], ignore_index=True).drop_duplicates(subset=['Effective Date'], keep='last')
+                    final_df = pd.concat([final_df, past_dates_df], ignore_index=True)
 
+                # --- FIX: Force all dates into a uniform format before sorting ---
+                final_df['Effective Date'] = pd.to_datetime(final_df['Effective Date'], errors='coerce').dt.date
+                
+                final_df = final_df.drop_duplicates(subset=['Effective Date'], keep='last')
                 final_df = final_df.dropna(subset=['Effective Date'])
                 final_df = final_df.sort_values(by='Effective Date').reset_index(drop=True)
                 
