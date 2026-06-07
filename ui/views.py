@@ -231,9 +231,7 @@ def render_savings_dashboard():
     savings_target = current_income * (st.session_state.pct_split_savings / 100.0)
 
     df_sav = st.session_state.savings_ledger.copy()
-    real_days_passed = (today - anchor_date).days
-    paydays_to_calc = max(0, real_days_passed // 14)
-
+    
     bucket_balances = {}
     allocated_total = 0.0
     total_assigned_pct = 0.0
@@ -243,20 +241,21 @@ def render_savings_dashboard():
         b_pct = float(b_data.get("pct", 0.0))
         total_assigned_pct += b_pct
         
+        # Now inherently includes your auto-deposits directly from the ledger
         b_ledger = df_sav[df_sav["Fund"] == b_name]["Amount"].sum() if not df_sav.empty else 0.0
-        b_auto = (savings_target * (b_pct / 100.0)) * paydays_to_calc
         
-        b_bal = b_init + b_ledger + b_auto
+        b_bal = b_init + b_ledger
         bucket_balances[b_name] = b_bal
         allocated_total += b_bal
 
     unassigned_pct = max(0.0, 100.0 - total_assigned_pct)
-    unassigned_auto = (savings_target * (unassigned_pct / 100.0)) * paydays_to_calc
     unassigned_ledger = df_sav[df_sav["Fund"] == "Unallocated Savings"]["Amount"].sum() if not df_sav.empty else 0.0
-    unassigned_bal = unassigned_auto + unassigned_ledger + st.session_state.starting_savings_balance
+    unassigned_bal = unassigned_ledger + st.session_state.starting_savings_balance
 
     net_total_savings = allocated_total + unassigned_bal
-    total_background_auto = savings_target * paydays_to_calc
+    
+    # accurately summarize the physical rows instead of estimating
+    total_background_auto = df_sav[df_sav["Type"] == "Auto-Deposit"]["Amount"].sum() if not df_sav.empty else 0.0
 
     st.metric(label="🏦 Grand Total Savings (Sum of All Buckets)", value=f"${net_total_savings:,.2f}", delta=f"+${total_background_auto:,.2f} via Auto-Payday")
     st.markdown("---")
