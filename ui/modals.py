@@ -53,16 +53,25 @@ def render_unified_income_splits_modal():
             
     with col_ledger:
         st.markdown("<h5 style='margin-top:0; padding-top:0;'>Historical Timeline Ledger</h5>", unsafe_allow_html=True)
+        
+        # Merge existing manual edits with auto-generated dates
         display_df = df_temp.copy()
         if not past_dates_df.empty:
-            display_df = pd.concat([display_df, past_dates_df], ignore_index=True).drop_duplicates(subset=['Effective Date'], keep='last').sort_values('Effective Date')
+            # Only add auto-dates that don't already exist as manual entries
+            existing_dates = display_df['Effective Date'].tolist()
+            new_auto_rows = past_dates_df[~past_dates_df['Effective Date'].isin(existing_dates)]
+            display_df = pd.concat([display_df, new_auto_rows], ignore_index=True)
+            display_df = display_df.drop_duplicates(subset=['Effective Date'], keep='last').sort_values('Effective Date')
             
         edited_inc_df = st.data_editor(display_df, use_container_width=True, num_rows="dynamic", key="income_inline_grid_editor")
         
         if st.button("Save Ledger Edits", use_container_width=True):
+            # Sync inputs
             st.session_state.temp_pct_split_needs = st.session_state.get("val_needs_input", st.session_state.temp_pct_split_needs)
             st.session_state.temp_pct_split_wants = st.session_state.get("val_wants_input", st.session_state.temp_pct_split_wants)
             st.session_state.temp_pct_split_savings = st.session_state.get("val_savings_input", st.session_state.temp_pct_split_savings)
+            
+            # Save the ledger (The data_editor already contains your manual overrides)
             st.session_state.temp_income_history = edited_inc_df.sort_values(by='Effective Date').reset_index(drop=True)
             st.session_state.show_unified_modal = True
             st.rerun()
