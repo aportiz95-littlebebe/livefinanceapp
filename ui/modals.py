@@ -122,19 +122,15 @@ def render_unified_income_splits_modal():
         btn_save, btn_close = st.columns([4, 2])
         with btn_save:
             if st.button("💾 Save Changes", use_container_width=True):
+                # final_df already contains the auto-generated dates from the ledger above!
                 final_df = edited_inc_df.copy()
                 
-                if not past_dates_df.empty:
-                    past_dates_df['Effective Date'] = pd.to_datetime(past_dates_df['Effective Date']).dt.date
-                    final_df = pd.concat([final_df, past_dates_df], ignore_index=True)
-
                 final_df['Effective Date'] = pd.to_datetime(final_df['Effective Date'], errors='coerce').dt.date
                 final_df = final_df.drop_duplicates(subset=['Effective Date'], keep='last')
                 final_df = final_df.dropna(subset=['Effective Date'])
                 final_df = final_df.sort_values(by='Effective Date').reset_index(drop=True)
                 
                 # --- NEW: Generate Historical Savings Ledger Auto-Deposits ---
-                # 1. Clear out old auto-deposits to prevent duplicates if you edit the timeline
                 if not st.session_state.savings_ledger.empty:
                     df_sav = st.session_state.savings_ledger
                     st.session_state.savings_ledger = df_sav[df_sav["Type"] != "Auto-Deposit"]
@@ -143,7 +139,6 @@ def render_unified_income_splits_modal():
                 today = datetime.now().date()
                 past_paydays = final_df[final_df['Effective Date'] <= today]
 
-                # 2. Iterate through historical checks and write actual ledger rows
                 for _, row in past_paydays.iterrows():
                     p_date = row['Effective Date']
                     p_amt = float(row['Amount'])
