@@ -24,31 +24,41 @@ def render_unified_income_splits_modal():
     past_dates_df = pd.DataFrame() 
     
     with col_inputs:
-        new_pay = st.number_input("Paycheck Base Amount ($)", min_value=0.0, value=float(active_pay), step=50.0, format="%.2f")
-        new_starting_savings = st.number_input(
-            "What was your starting amount in Savings at the start of the year?", 
-            value=float(st.session_state.get("temp_starting_savings_balance", 0.0)), 
-            step=100.0, 
-            format="%.2f"
-        )
-        new_freq = st.text_input("How frequently do you get paid?", value="Bi-weekly", disabled=True)
+        st.markdown("### Pay Rate History")
+        # Define the structure for your pay rate history
+        if 'temp_pay_rate_history' not in st.session_state:
+            st.session_state.temp_pay_rate_history = pd.DataFrame([{"Start Date": datetime(datetime.now().year, 1, 1).date(), "Rate": active_pay}])
         
+        edited_rates = st.data_editor(
+            st.session_state.temp_pay_rate_history,
+            use_container_width=True,
+            num_rows="dynamic",
+            column_config={"Start Date": st.column_config.DateColumn(format="YYYY-MM-DD"), "Rate": st.column_config.NumberColumn(format="$%.2f")}
+        )
+        st.session_state.temp_pay_rate_history = edited_rates.sort_values("Start Date")
+
+        new_starting_savings = st.number_input(
+            "Starting Savings Balance ($):", 
+            value=float(st.session_state.get("temp_starting_savings_balance", 0.0)), 
+            step=100.0, format="%.2f"
+        )
+        
+        # Logic to map rates to paydays
         opts = ["Next Payday", "First Payday of the Year", "Manual Entry"]
-        active_idx = opts.index(st.session_state.temp_anchor_mode) if st.session_state.temp_anchor_mode in opts else 0
-        new_anchor = st.radio("Would you like to start your budget allocations with your upcoming paycheck, start of the year, or enter them manually?", opts, index=active_idx)
+        new_anchor = st.radio("Anchor Mode", opts, index=opts.index(st.session_state.temp_anchor_mode))
         
         int_val = 14
-        if new_anchor == "Next Payday":
-            new_payday = st.date_input("When is your next pay day?", value=st.session_state.temp_next_payday)
-            calc_date = new_payday
-            target_year = datetime.now().year
-            while calc_date.year > target_year: calc_date -= timedelta(days=int_val)
-            while (calc_date - timedelta(days=int_val)).year == target_year: calc_date -= timedelta(days=int_val)
-            p_dates = [{"Effective Date": (calc_date + timedelta(days=i*int_val)), "Amount": float(new_pay)} for i in range(26) if (calc_date + timedelta(days=i*int_val)) <= datetime.now().date()]
-            past_dates_df = pd.DataFrame(p_dates)
-        elif new_anchor == "First Payday of the Year":
-            new_first_payday = st.date_input("When was your first pay day this year?", value=st.session_state.temp_first_payday)
-            p_dates = [{"Effective Date": (new_first_payday + timedelta(days=i*int_val)), "Amount": float(new_pay)} for i in range(26) if (new_first_payday + timedelta(days=i*int_val)) <= datetime.now().date()]
+        past_dates_df = pd.DataFrame()
+        if new_anchor in ["Next Payday", "First Payday of the Year"]:
+            start_date = st.session_state.temp_next_payday if new_anchor == "Next Payday" else st.session_state.temp_first_payday
+            p_dates = []
+            c_date = start_date
+            while c_date <= datetime.now().date():
+                # Find the most recent rate for this date
+                applicable_rates = edited_rates[edited_rates["Start Date"] <= c_date]
+                rate = applicable_rates.iloc[-1]["Rate"] if not applicable_rates.empty else edited_rates.iloc[0]["Rate"]
+                p_dates.append({"Effective Date": c_date, "Amount": float(rate)})
+                c_date += timedelta(days=int_val)
             past_dates_df = pd.DataFrame(p_dates)
             
     with col_ledger:
