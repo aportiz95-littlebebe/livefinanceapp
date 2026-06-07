@@ -77,8 +77,19 @@ def render_unified_income_splits_modal():
             
     with col_ledger:
         st.markdown("<h5 style='margin-top:0; padding-top:0;'>Historical Timeline Ledger</h5>", unsafe_allow_html=True)
+        
+        # --- FIX: Merge auto-generated dates into the display ledger natively ---
+        display_df = df_temp.copy()
+        if not past_dates_df.empty:
+            past_dates_df['Effective Date'] = pd.to_datetime(past_dates_df['Effective Date']).dt.date
+            display_df = pd.concat([display_df, past_dates_df], ignore_index=True)
+            display_df['Effective Date'] = pd.to_datetime(display_df['Effective Date'], errors='coerce').dt.date
+            display_df = display_df.drop_duplicates(subset=['Effective Date'], keep='last')
+            display_df = display_df.dropna(subset=['Effective Date'])
+            display_df = display_df.sort_values(by='Effective Date').reset_index(drop=True)
+
         edited_inc_df = st.data_editor(
-            df_temp, 
+            display_df, 
             use_container_width=True, 
             num_rows="dynamic",
             column_config={
