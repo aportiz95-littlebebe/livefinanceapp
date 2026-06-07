@@ -54,24 +54,31 @@ def render_unified_income_splits_modal():
     with col_ledger:
         st.markdown("<h5 style='margin-top:0; padding-top:0;'>Historical Timeline Ledger</h5>", unsafe_allow_html=True)
         
-        # Merge existing manual edits with auto-generated dates
+        # --- FIX: Clean existing auto-rows before display to prevent stacking ---
         display_df = df_temp.copy()
+        
+        # This removes auto-generated rows so the next save doesn't duplicate them
+        if not display_df.empty:
+            # Assumes your auto-generated rows might have a note or you can identify them
+            # If you want to be safe, just remove the rows that match the frequency logic
+            display_df = display_df[display_df['Amount'] != float(new_pay)] # Optional: remove if you have manual variation
+        
         if not past_dates_df.empty:
-            # Only add auto-dates that don't already exist as manual entries
-            existing_dates = display_df['Effective Date'].tolist()
-            new_auto_rows = past_dates_df[~past_dates_df['Effective Date'].isin(existing_dates)]
-            display_df = pd.concat([display_df, new_auto_rows], ignore_index=True)
-            display_df = display_df.drop_duplicates(subset=['Effective Date'], keep='last').sort_values('Effective Date')
+            # We specifically filter to ensure we don't add dates that are already there
+            past_dates_df['Effective Date'] = pd.to_datetime(past_dates_df['Effective Date']).dt.date
+            display_df['Effective Date'] = pd.to_datetime(display_df['Effective Date']).dt.date
             
+            # Merge and drop duplicates
+            display_df = pd.concat([display_df, past_dates_df], ignore_index=True)
+            display_df = display_df.drop_duplicates(subset=['Effective Date'], keep='first')
+            display_df = display_df.sort_values('Effective Date')
+
         edited_inc_df = st.data_editor(display_df, use_container_width=True, num_rows="dynamic", key="income_inline_grid_editor")
         
         if st.button("Save Ledger Edits", use_container_width=True):
-            # Sync inputs
             st.session_state.temp_pct_split_needs = st.session_state.get("val_needs_input", st.session_state.temp_pct_split_needs)
             st.session_state.temp_pct_split_wants = st.session_state.get("val_wants_input", st.session_state.temp_pct_split_wants)
             st.session_state.temp_pct_split_savings = st.session_state.get("val_savings_input", st.session_state.temp_pct_split_savings)
-            
-            # Save the ledger (The data_editor already contains your manual overrides)
             st.session_state.temp_income_history = edited_inc_df.sort_values(by='Effective Date').reset_index(drop=True)
             st.session_state.show_unified_modal = True
             st.rerun()
