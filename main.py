@@ -1,4 +1,14 @@
+import sys
+import os
 import streamlit as st
+
+# --- PATH FIX FOR STREAMLIT CLOUD ---
+# This forces the cloud server to recognize the root folder 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+# --- NOW DO THE LOCAL IMPORTS ---
 from data.state import init_session_state
 from ui.theme import apply_custom_theme
 from ui.views import render_budget_dashboard, render_savings_dashboard
@@ -10,6 +20,8 @@ from ui.modals import (
     render_combined_envelopes_modal, 
     render_savings_history_modal
 )
+
+# ... [the rest of your main.py code stays exactly the same below this] ...
 
 # --- APP CONFIGURATION ---
 st.set_page_config(page_title="My Finance Dashboard V15.0", layout="wide")
