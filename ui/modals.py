@@ -11,25 +11,23 @@ def render_unified_income_splits_modal():
         if past.empty:
             df_s = df_temp.sort_values(by='Effective Date', ascending=True)
             active_pay = float(df_s.iloc[0]['Amount']) if not df_s.empty else 0.00
-            active_start_date = df_s.iloc[0]['Effective Date'] if not df_s.empty else datetime.now().date()
         else:
             past_s = past.sort_values(by='Effective Date', ascending=False)
             active_pay = float(past_s.iloc[0]['Amount'])
-            active_start_date = past_s.iloc[0]['Effective Date']
     else:
         active_pay = 0.00
-        active_start_date = datetime.now().date()
 
     st.markdown("### Base Pay & Timeline Setup")
     st.caption("Configure your paycheck amount, schedule, and timeline anchor.")
     
     col_inputs, col_ledger = st.columns([1.0, 1.2])
+    past_dates_df = pd.DataFrame() 
+    
     with col_inputs:
         new_pay = st.number_input("Paycheck Base Amount ($)", min_value=0.0, value=float(active_pay), step=50.0, format="%.2f")
-        effective_date = st.date_input("Effective Tracking Date", value=active_start_date)
         
         new_starting_savings = st.number_input(
-            "Starting Savings Balance ($)", 
+            "What was your starting amount in Savings at the start of the year?", 
             value=float(st.session_state.get("temp_starting_savings_balance", 0.0)), 
             step=100.0, 
             format="%.2f",
@@ -57,7 +55,7 @@ def render_unified_income_splits_modal():
             
             p_dates, c_date = [], new_first_payday
             while c_date <= datetime.now().date():
-                p_dates.append({"Effective Date": c_date, "Amount": float(active_pay)})
+                p_dates.append({"Effective Date": c_date, "Amount": float(new_pay)}) 
                 c_date += timedelta(days=int_val)
             past_dates_df = pd.DataFrame(p_dates)
             
@@ -67,7 +65,7 @@ def render_unified_income_splits_modal():
             
             p_dates, c_date = [], new_first_payday
             while c_date <= datetime.now().date():
-                p_dates.append({"Effective Date": c_date, "Amount": float(active_pay)})
+                p_dates.append({"Effective Date": c_date, "Amount": float(new_pay)})
                 c_date += timedelta(days=int_val)
             past_dates_df = pd.DataFrame(p_dates)
             st.success("Historical ledger automatically generated using your active base pay.")
@@ -75,14 +73,7 @@ def render_unified_income_splits_modal():
         else: # Manual Entry
             new_first_payday = st.date_input("When was your first pay day this year?", value=st.session_state.temp_first_payday)
             new_payday = st.session_state.temp_next_payday
-            
-            st.info("Fill in historical checks below to calculate your accurate YTD earnings.")
-            p_dates, c_date = [], new_first_payday
-            while c_date <= datetime.now().date():
-                p_dates.append({"Effective Date": c_date, "Amount": float(active_pay)})
-                c_date += timedelta(days=int_val)
-            
-            past_dates_df = st.data_editor(pd.DataFrame(p_dates), use_container_width=True, hide_index=True, key="hist_gen_grid")
+            st.info("Please enter your historical checks directly into the Historical Timeline Ledger on the right.")
             
     with col_ledger:
         st.markdown("<h5 style='margin-top:0; padding-top:0;'>Historical Timeline Ledger</h5>", unsafe_allow_html=True)
@@ -96,7 +87,7 @@ def render_unified_income_splits_modal():
             },
             key="income_inline_grid_editor"
         )
-        if st.button("Save Changes", use_container_width=True):
+        if st.button("Save Ledger Edits", use_container_width=True):
             edited_inc_df['Effective Date'] = pd.to_datetime(edited_inc_df['Effective Date']).dt.date
             st.session_state.temp_income_history = edited_inc_df.sort_values(by='Effective Date').reset_index(drop=True)
             st.rerun()
@@ -120,18 +111,16 @@ def render_unified_income_splits_modal():
         btn_save, btn_close = st.columns([4, 2])
         with btn_save:
             if st.button("💾 Save Changes", use_container_width=True):
-                df = st.session_state.temp_income_history.copy()
-                if not df.empty:
-                    df = df[df['Effective Date'] != effective_date]
-                new_row = pd.DataFrame([{"Effective Date": effective_date, "Amount": new_pay}])
+                final_df = edited_inc_df.copy()
                 
                 if not past_dates_df.empty:
                     past_dates_df['Effective Date'] = pd.to_datetime(past_dates_df['Effective Date']).dt.date
-                    df = pd.concat([df, past_dates_df], ignore_index=True).drop_duplicates(subset=['Effective Date'], keep='last')
+                    final_df = pd.concat([final_df, past_dates_df], ignore_index=True).drop_duplicates(subset=['Effective Date'], keep='last')
 
-                df = pd.concat([df, new_row], ignore_index=True).sort_values(by='Effective Date').reset_index(drop=True)
+                final_df = final_df.dropna(subset=['Effective Date'])
+                final_df = final_df.sort_values(by='Effective Date').reset_index(drop=True)
                 
-                st.session_state.income_history = df
+                st.session_state.income_history = final_df
                 st.session_state.pct_split_needs, st.session_state.pct_split_wants, st.session_state.pct_split_savings = val_needs, val_wants, val_savings
                 st.session_state.next_payday, st.session_state.pay_frequency = new_payday, new_freq
                 st.session_state.anchor_mode, st.session_state.first_payday = new_anchor, new_first_payday
