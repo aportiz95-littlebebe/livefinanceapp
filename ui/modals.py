@@ -117,13 +117,46 @@ def render_unified_income_splits_modal():
                     past_dates_df['Effective Date'] = pd.to_datetime(past_dates_df['Effective Date']).dt.date
                     final_df = pd.concat([final_df, past_dates_df], ignore_index=True)
 
-                # --- FIX: Force all dates into a uniform format before sorting ---
                 final_df['Effective Date'] = pd.to_datetime(final_df['Effective Date'], errors='coerce').dt.date
-                
                 final_df = final_df.drop_duplicates(subset=['Effective Date'], keep='last')
                 final_df = final_df.dropna(subset=['Effective Date'])
                 final_df = final_df.sort_values(by='Effective Date').reset_index(drop=True)
                 
+                # --- NEW: Generate Historical Savings Ledger Auto-Deposits ---
+                # 1. Clear out old auto-deposits to prevent duplicates if you edit the timeline
+                if not st.session_state.savings_ledger.empty:
+                    df_sav = st.session_state.savings_ledger
+                    st.session_state.savings_ledger = df_sav[df_sav["Type"] != "Auto-Deposit"]
+
+                new_sav_rows = []
+                today = datetime.now().date()
+                past_paydays = final_df[final_df['Effective Date'] <= today]
+
+                # 2. Iterate through historical checks and write actual ledger rows
+                for _, row in past_paydays.iterrows():
+                    p_date = row['Effective Date']
+                    p_amt = float(row['Amount'])
+                    sav_pool = p_amt * (val_savings / 100.0)
+
+                    if sav_pool > 0:
+                        total_assigned_pct = 0.0
+                        for b_name, b_data in st.session_state.bucket_config.items():
+                            b_pct = float(b_data.get("pct", 0.0))
+                            total_assigned_pct += b_pct
+                            b_dep = sav_pool * (b_pct / 100.0)
+                            if b_dep > 0:
+                                new_sav_rows.append({"Date": p_date, "Fund": b_name, "Type": "Auto-Deposit", "Note": "Payday Allocation", "Amount": b_dep})
+
+                        unassigned_pct = max(0.0, 100.0 - total_assigned_pct)
+                        un_dep = sav_pool * (unassigned_pct / 100.0)
+                        if un_dep > 0:
+                            new_sav_rows.append({"Date": p_date, "Fund": "Unallocated Savings", "Type": "Auto-Deposit", "Note": "Payday Allocation", "Amount": un_dep})
+
+                if new_sav_rows:
+                    st.session_state.savings_ledger = pd.concat([st.session_state.savings_ledger, pd.DataFrame(new_sav_rows)], ignore_index=True)
+                    st.session_state.savings_ledger['Date'] = pd.to_datetime(st.session_state.savings_ledger['Date']).dt.date
+                    st.session_state.savings_ledger = st.session_state.savings_ledger.sort_values(by='Date').reset_index(drop=True)
+
                 st.session_state.income_history = final_df
                 st.session_state.pct_split_needs, st.session_state.pct_split_wants, st.session_state.pct_split_savings = val_needs, val_wants, val_savings
                 st.session_state.next_payday, st.session_state.pay_frequency = new_payday, new_freq
