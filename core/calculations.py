@@ -2,13 +2,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 def get_period_dates(anchor_date, interval_days, today=None):
-    """Calculates start and end dates for current and next periods."""
-    if anchor_date is None:
-        # Fallback parameters if timeline hasn't been set yet
-        if today is None: today = datetime.now().date()
-        return today, today, today, today
-
+    """Calculates start and end dates for current and next periods safely."""
     if today is None: today = datetime.now().date()
+    if anchor_date is None:
+        return today, today, today, today
     
     days_since_anchor = (today - anchor_date).days
     period_multiplier = days_since_anchor // interval_days
@@ -55,7 +52,7 @@ def get_ordinal_suffix(day):
 def project_payday_cadence(first_payday, pay_frequency, target_year):
     """
     Projects all recurring payday dates for a target year based on interval rules.
-    Returns an empty set safely if the first payday is unselected (None).
+    Returns an empty set if no date has been configured.
     """
     projected_dates = set()
     if first_payday is None:
