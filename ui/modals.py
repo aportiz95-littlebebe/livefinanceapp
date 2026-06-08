@@ -15,12 +15,10 @@ def render_unified_income_splits_modal():
     with col_inputs:
         st.markdown("#### ⚙️ Auto-Generate Pay Dates")
         
-        # Pull from session state safely. If it hasn't been changed yet, fall back directly to January 1, 2026.
         staged_first_payday = st.session_state.get("first_payday")
         if staged_first_payday is None:
             staged_first_payday = date(2026, 1, 1)
             
-        # Standard date picker that always initializes with a valid 2026 object baseline
         chosen_first_payday = st.date_input(
             "First Payday of the Year:", 
             value=staged_first_payday,
@@ -35,7 +33,8 @@ def render_unified_income_splits_modal():
             index=frequency_opts.index(st.session_state.get("pay_frequency", "Bi-weekly"))
         )
         
-        if st.button("🗓️ Generate/Refresh Pay Dates", use_container_width=True):
+        # Renamed: Generate/Refresh Pay Dates -> Generate Pay Dates
+        if st.button("🗓️ Generate Pay Dates", use_container_width=True):
             st.session_state.temp_income_history = generate_timeline_dates(
                 first_payday=chosen_first_payday,
                 frequency=chosen_freq,
@@ -82,13 +81,15 @@ def render_unified_income_splits_modal():
             }
         )
         
-        if st.button("Stage Ledger Changes", use_container_width=True):
+        # Renamed: Stage Ledger Changes -> Save Changes
+        if st.button("Save Changes", use_container_width=True, key="btn_stage_ledger_v1"):
             st.session_state.temp_income_history = edited_inc_df.dropna(subset=['Effective Date', 'Amount'])
-            st.toast("Amounts staged successfully!", icon="💾")
+            st.toast("Amounts saved successfully!", icon="💾")
 
     st.markdown("---")
     if (val_needs + val_wants + val_savings == 100.0) or (val_needs == 0 and val_wants == 0 and val_savings == 0):
-        if st.button("💾 Save All Changes & Calculate Split History", use_container_width=True):
+        # Renamed: Save All Changes & Calculate Split History -> Save Changes
+        if st.button("💾 Save Changes", use_container_width=True, key="btn_final_save_v1"):
             final_df = edited_inc_df.dropna(subset=['Effective Date', 'Amount']).copy()
             
             if not final_df.empty:
@@ -107,7 +108,6 @@ def render_unified_income_splits_modal():
             st.session_state.pct_split_wants = val_wants
             st.session_state.pct_split_savings = val_savings
             st.session_state.starting_savings_balance = new_starting_savings
-            st.session_state.first_payday = chosen_first_payday
             st.rerun()
     else:
         st.error("❌ Budget Allocation percentages must sum up to exactly 100%.")
@@ -224,7 +224,7 @@ def render_ledger_modal():
     st.dataframe(st.session_state.expenses, use_container_width=True)
 
 
-@st.dialog("🛠️ Configure Envelopes & Targets", width="large")
+@st.dialog("🛠️ Edit Buckets & Goals", width="large")
 def render_combined_envelopes_modal():
     st.markdown("### 🗂️ Configure Envelopes & Targets")
     def toggle_edit_buck(idx, state): st.session_state[f"edit_buck_{idx}"] = state
@@ -285,7 +285,9 @@ def render_combined_envelopes_modal():
             
     is_any_bucket_editing = any(st.session_state.get(f"edit_buck_{i}", False) for i in range(len(st.session_state.temp_bucket_config)))
     add_btn_col, _ = st.columns([2.5, 5.5])
-    with add_btn_col: st.button("Add Savings Bucket", use_container_width=True, on_click=add_bucket, disabled=is_any_bucket_editing)
+    
+    # Renamed: Add Savings Bucket -> Add New Bucket
+    with add_btn_col: st.button("Add New Bucket", use_container_width=True, on_click=add_bucket, disabled=is_any_bucket_editing)
 
     custom_unbacked_goals = [k for k in st.session_state.temp_bucket_targets.keys() if k not in ["Unallocated Savings"] and k not in st.session_state.temp_bucket_config]
     if custom_unbacked_goals:
