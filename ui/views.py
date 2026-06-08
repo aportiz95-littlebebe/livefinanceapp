@@ -263,18 +263,16 @@ def render_savings_dashboard():
     unassigned_bal = net_total_savings - allocated_total
     total_background_auto = df_sav[df_sav["Type"] == "Auto-Deposit"]["Amount"].sum() if not df_sav.empty else 0.0
 
-    # TWO COLUMN CORE LAYOUT DEPLOYED HERE
-    # Left column contains high-level metric targets, right column holds progress grids
+    # TWO COLUMN CORE LAYOUT
     workspace_col_left, workspace_col_right = st.columns([1.1, 1.4])
     
     with workspace_col_left:
         st.markdown("### 📊 Overall Matrix")
         st.metric(label="🏦 Grand Total Savings (Sum of All Buckets)", value=f"${net_total_savings:,.2f}", delta=f"+${total_background_auto:,.2f} via Auto-Payday")
-        st.write(" ") # Padding spacer spacer row element
+        st.write(" ") 
         st.metric(label="📈 YTD Savings Deposited (This Year)", value=f"${accumulated_payday_savings_ytd:,.2f}")
         
         st.markdown("---")
-        # Shifted Logging Tool to sit cleanly on the left column block underneath metrics
         st.markdown("### 📥 Log Savings Activity")
         
         def process_sav_transaction():
@@ -378,20 +376,3 @@ def render_savings_dashboard():
                 st.progress(prog_ratio)
                 
             st.markdown("---")
-
-    # Bottom Full Width Split Rules Grid row display banner mapping
-    st.markdown("### 🪣 Bucket Distribution Rules")
-    st.info("Your payday auto-deposits split into your buckets according to these percentages.")
-    
-    st.write(f"**Unallocated Savings**")
-    st.caption(f"Catches any unassigned payday % if your buckets don't sum to 100%.")
-    
-    if st.session_state.bucket_config:
-        for b_name, b_data in st.session_state.bucket_config.items():
-            pct_val = b_data.get('pct', 0.0)
-            st.write(f"**{b_name}**")
-            st.progress(pct_val / 100.0)
-            st.caption(f"Receives {pct_val:.1f}% of every payday injection.")
-    else:
-        st.write(" ")
-        st.success("No active buckets. 100% of your funds go to Unallocated Savings. Click 'Configure Envelopes' to create tracker rows!")
