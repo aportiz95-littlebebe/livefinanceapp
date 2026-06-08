@@ -43,7 +43,7 @@ def init_session_state():
     if 'custom_categories' not in st.session_state:
         st.session_state.custom_categories = {}
 
-    # --- Timeline Anchors (Initialized Blank for Live Selection) ---
+    # --- Timeline Anchors (Initialized Empty for Live User Choice) ---
     if 'next_payday' not in st.session_state:
         st.session_state.next_payday = None
         
