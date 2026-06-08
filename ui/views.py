@@ -127,7 +127,7 @@ def render_budget_dashboard():
         if next_formatted_bills_list:
             for bullet in next_formatted_bills_list: st.markdown(bullet)
             st.markdown(f"**Total Amount Due: ${next_bills_total:,.2f}**")
-        else: st.success("No bills scheduled in the next bi-weekly block.")
+        else: st.success("No bills scheduled in the next block.")
 
     st.markdown("---")
     
@@ -226,7 +226,7 @@ def render_savings_dashboard():
     st.markdown("---")
 
     today = datetime.now().date()
-    anchor_date = st.session_state.first_payday if st.session_state.anchor_mode in ["First Payday of the Year", "Manual Entry"] else st.session_state.next_payday
+    interval_days = 7 if st.session_state.pay_frequency == "Weekly" else (30 if st.session_state.pay_frequency == "Monthly" else 14)
     current_income = get_income_for_date(st.session_state.income_history, today)
     savings_target = current_income * (st.session_state.pct_split_savings / 100.0)
 
@@ -241,20 +241,30 @@ def render_savings_dashboard():
         b_pct = float(b_data.get("pct", 0.0))
         total_assigned_pct += b_pct
         
-        # Now inherently includes your auto-deposits directly from the ledger
         b_ledger = df_sav[df_sav["Fund"] == b_name]["Amount"].sum() if not df_sav.empty else 0.0
-        
         b_bal = b_init + b_ledger
         bucket_balances[b_name] = b_bal
         allocated_total += b_bal
 
     unassigned_pct = max(0.0, 100.0 - total_assigned_pct)
     unassigned_ledger = df_sav[df_sav["Fund"] == "Unallocated Savings"]["Amount"].sum() if not df_sav.empty else 0.0
-    unassigned_bal = unassigned_ledger + st.session_state.starting_savings_balance
-
-    net_total_savings = allocated_total + unassigned_bal
     
-    # accurately summarize the physical rows instead of estimating
+    # CALCULATE REVOLVING DYNAMIC PAYCHECK CONTRIBUTIONS UNTIL TODAY
+    accumulated_payday_savings = 0.0
+    if not st.session_state.income_history.empty:
+        df_inc = st.session_state.income_history.copy()
+        df_inc['Effective Date'] = pd.to_datetime(df_inc['Effective Date']).dt.date
+        # Loop through every logged payday up until today
+        historical_paychecks = df_inc[df_inc['Effective Date'] <= today]
+        for _, row in historical_paychecks.iterrows():
+            # Calculate what amount went to savings from this specific paycheck amount
+            accumulated_payday_savings += float(row['Amount']) * (st.session_state.pct_split_savings / 100.0)
+
+    # Grand total savings = Starting Balance + All Historical Payday Accumulations + any Manual Savings Transactions
+    manual_deposits_total = df_sav[df_sav["Type"] != "Auto-Deposit"]["Amount"].sum() if not df_sav.empty else 0.0
+    net_total_savings = st.session_state.starting_savings_balance + accumulated_payday_savings + manual_deposits_total
+    
+    unassigned_bal = net_total_savings - allocated_total
     total_background_auto = df_sav[df_sav["Type"] == "Auto-Deposit"]["Amount"].sum() if not df_sav.empty else 0.0
 
     st.metric(label="🏦 Grand Total Savings (Sum of All Buckets)", value=f"${net_total_savings:,.2f}", delta=f"+${total_background_auto:,.2f} via Auto-Payday")
@@ -306,9 +316,15 @@ def render_savings_dashboard():
                 else:
                     if biweekly_flow > 0:
                         paychecks_req = int(-(-remaining // biweekly_flow))
-                        days_to_next_payday = 14 - (real_days_passed % 14)
-                        next_payday_date = today + timedelta(days=days_to_next_payday)
-                        accomplish_date = next_payday_date + timedelta(days=(paychecks_req - 1) * 14)
+                        
+                        # Dynamically find the upcoming target payday date safely
+                        next_payday_date = st.session_state.next_payday
+                        if today > next_payday_date:
+                            days_diff = (today - next_payday_date).days
+                            intervals_needed = (days_diff // interval_days) + 1
+                            next_payday_date = next_payday_date + timedelta(days=intervals_needed * interval_days)
+
+                        accomplish_date = next_payday_date + timedelta(days=(paychecks_req - 1) * interval_days)
                         
                         st.write(f"**Timeline:** ~{paychecks_req} paychecks")
                         st.write(f"📆 *Est. Date:* **{accomplish_date.strftime('%b %d, %Y')}**")
