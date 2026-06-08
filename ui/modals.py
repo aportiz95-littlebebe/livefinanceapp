@@ -15,13 +15,15 @@ def render_unified_income_splits_modal():
     with col_inputs:
         st.markdown("#### ⚙️ Auto-Generate Pay Dates")
         
-        # Pull from session state or leave empty as None
+        # Pull from session state safely
         staged_first_payday = st.session_state.get("first_payday", None)
         
-        # Set value=None to keep the box completely blank on setup
+        # Fixed: Added clear default constraints so Streamlit allows a blank default value safely
         chosen_first_payday = st.date_input(
             "First Payday of the Year:", 
             value=staged_first_payday,
+            min_value=datetime(datetime.now().year - 1, 1, 1).date(),
+            max_value=datetime(datetime.now().year + 1, 12, 31).date(),
             placeholder="Select your calendar start date...",
             key="modal_first_payday_input"
         )
