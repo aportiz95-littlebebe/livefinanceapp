@@ -51,7 +51,7 @@ def render_budget_dashboard():
     current_period_start, current_period_end, next_period_start, next_period_end = get_period_dates(anchor_date, interval_days, today)
     current_income = get_income_for_date(st.session_state.income_history, today)
 
-    # Invoke newly isolated computations core function
+    # Invoke isolated calculations engine
     metrics = compute_budget_metrics(
         current_income=current_income,
         pct_needs=st.session_state.pct_split_needs,
@@ -144,10 +144,14 @@ def render_budget_dashboard():
         if metrics['needs_remaining'] > 0:
             st.success(f"💡 End-of-period sweep potential: **${metrics['needs_remaining']:,.2f}** to savings!")
 
+    # =====================================================================
+    # 📅 FIXED MONTHLY BILL CALENDAR SECTION (AUTOMATED PATTERNS)
+    # =====================================================================
     st.markdown("---")
     st.subheader("📅 Monthly Bill Calendar")
     year, month = today.year, today.month
     
+    # Sunday start layout alignment mapping
     cal = calendar.Calendar(firstweekday=6)
     month_days = cal.monthdayscalendar(year, month)
     
@@ -156,11 +160,19 @@ def render_budget_dashboard():
         if bill["Amount"] > 0: 
             bill_map.setdefault(bill["Due Day"], []).append(f"{bill['Name']} (${bill['Amount']:,.2f})")
 
-    active_paydays = set()
-    if not st.session_state.income_history.empty:
-        df_dates = st.session_state.income_history.copy()
-        df_dates['Effective Date'] = pd.to_datetime(df_dates['Effective Date']).dt.date
-        active_paydays = set(df_dates['Effective Date'].tolist())
+    # Generate the full cadence sequence starting from the first payday of the year
+    projected_paydays = set()
+    run_date = st.session_state.first_payday
+    
+    # Project dates forward safely through the entire current calendar year window
+    while run_date.year <= year:
+        projected_paydays.add(run_date)
+        if st.session_state.pay_frequency == "Weekly":
+            run_date += timedelta(days=7)
+        elif st.session_state.pay_frequency == "Monthly":
+            run_date += timedelta(days=30)
+        else:  # Bi-weekly standard cadence
+            run_date += timedelta(days=14)
 
     html_cal = f'<table style="width:100%; border-collapse:collapse; font-family:sans-serif; table-layout:fixed;"><tr>'
     for day_name in ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]: 
@@ -177,7 +189,9 @@ def render_budget_dashboard():
                 html_cal += f'<td style="{is_today} height:115px; vertical-align:top; padding:0px;">'
                 
                 current_cal_date = datetime(year, month, day).date()
-                if current_cal_date in active_paydays: 
+                
+                # Check if this date falls perfectly on your recurring projected bi-weekly timeline pattern
+                if current_cal_date in projected_paydays: 
                     html_cal += '<span style="background-color:#2e7d32; color:white; font-size:11px; font-weight:bold; padding:3px 8px; display:block;">💰 Payday!</span>'
                 
                 html_cal += f'<div style="padding:8px;"><span style="font-weight:bold; font-size:14px; color:#555;">{day}</span>'
