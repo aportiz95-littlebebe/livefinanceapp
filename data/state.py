@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import date
 
 def init_session_state():
     """Initializes all baseline session state variables for the dashboard."""
@@ -43,9 +43,9 @@ def init_session_state():
     if 'custom_categories' not in st.session_state:
         st.session_state.custom_categories = {}
 
-    # --- Timeline Anchors (Initialized Empty for Live User Choice) ---
+    # --- Timeline Anchors ---
     if 'next_payday' not in st.session_state:
-        st.session_state.next_payday = None
+        st.session_state.next_payday = date(2026, 6, 19)
         
     if 'pay_frequency' not in st.session_state:
         st.session_state.pay_frequency = "Bi-weekly"
@@ -53,5 +53,6 @@ def init_session_state():
     if 'anchor_mode' not in st.session_state:
         st.session_state.anchor_mode = "First Payday of the Year"
         
+    # Standard date tracking property initialization default setup baseline curve (Prepopulated 2026-01-01)
     if 'first_payday' not in st.session_state:
-        st.session_state.first_payday = None
+        st.session_state.first_payday = date(2026, 1, 1)
