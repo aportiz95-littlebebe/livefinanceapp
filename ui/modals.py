@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
+from core.calculations import generate_timeline_dates, calculate_historical_savings_splits
 
 @st.dialog("💰 Edit Income & Budgets", width="large")
 def render_unified_income_splits_modal():
-    # 0. Sync Persistent State
+    # 0. Sync Persistent State safely
     if 'temp_pct_split_needs' not in st.session_state: st.session_state.temp_pct_split_needs = st.session_state.pct_split_needs
     if 'temp_pct_split_wants' not in st.session_state: st.session_state.temp_pct_split_wants = st.session_state.pct_split_wants
     if 'temp_pct_split_savings' not in st.session_state: st.session_state.temp_pct_split_savings = st.session_state.pct_split_savings
@@ -12,76 +13,94 @@ def render_unified_income_splits_modal():
     col_inputs, col_ledger = st.columns([1.0, 1.2])
     
     with col_inputs:
-        # 1. Anchor Mode Selection
-        opts = ["Next Payday", "First Payday of the Year", "Manual Entry"]
-        new_anchor = st.radio("How would you like to anchor your timeline?", opts, index=opts.index(st.session_state.temp_anchor_mode) if st.session_state.temp_anchor_mode in opts else 0)
+        st.markdown("#### ⚙️ Auto-Generate Pay Dates")
         
-        # 2. Pay Rate History
-        st.markdown("#### Pay Rate History")
-        if 'temp_pay_rate_history' not in st.session_state:
-            st.session_state.temp_pay_rate_history = pd.DataFrame([{"Start Date": datetime(datetime.now().year, 1, 1).date(), "Rate": 0.0}])
-        edited_rates = st.data_editor(st.session_state.temp_pay_rate_history, use_container_width=True, num_rows="dynamic")
-        st.session_state.temp_pay_rate_history = edited_rates.sort_values("Start Date")
+        chosen_first_payday = st.date_input(
+            "First Payday of the Year:", 
+            value=st.session_state.get("first_payday", datetime(datetime.now().year, 1, 1).date())
+        )
         
-        # 4. Starting Savings Balance
-        new_starting_savings = st.number_input("Starting Savings Balance ($):", value=float(st.session_state.get("temp_starting_savings_balance", 0.0)), step=100.0, format="%.2f")
+        frequency_opts = ["Weekly", "Bi-weekly", "Monthly"]
+        chosen_freq = st.selectbox(
+            "Pay Frequency:", 
+            frequency_opts, 
+            index=frequency_opts.index(st.session_state.get("pay_frequency", "Bi-weekly"))
+        )
+        
+        if st.button("🗓️ Generate/Refresh Pay Dates", use_container_width=True):
+            st.session_state.temp_income_history = generate_timeline_dates(
+                first_payday=chosen_first_payday,
+                frequency=chosen_freq,
+                existing_income_df=st.session_state.income_history
+            )
+            st.session_state.first_payday = chosen_first_payday
+            st.session_state.pay_frequency = chosen_freq
+            st.toast("Pay dates generated up to today!", icon="📆")
 
-        # Logic to generate Ledger (Step 3)
-        past_dates_df = pd.DataFrame()
-        if new_anchor in ["Next Payday", "First Payday of the Year"]:
-            start_date = st.date_input("Start Date", value=st.session_state.temp_next_payday if new_anchor == "Next Payday" else st.session_state.temp_first_payday)
-            p_dates, c_date = [], start_date
-            while c_date <= datetime.now().date():
-                applicable = edited_rates[edited_rates["Start Date"] <= c_date]
-                rate = applicable.iloc[-1]["Rate"] if not applicable.empty else edited_rates.iloc[0]["Rate"]
-                p_dates.append({"Effective Date": c_date, "Amount": float(rate)})
-                c_date += timedelta(days=14)
-            past_dates_df = pd.DataFrame(p_dates)
+        st.markdown("---")
+        new_starting_savings = st.number_input(
+            "Starting Savings Balance ($):", 
+            value=float(st.session_state.get("starting_savings_balance", 0.0)), 
+            step=100.0, 
+            format="%.2f"
+        )
+        
+        st.markdown("---")
+        st.markdown("### 📊 Budget Allocations")
+        val_needs = st.number_input("Needs %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_needs), key="val_needs_input")
+        val_wants = st.number_input("Wants %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_wants), key="val_wants_input")
+        val_savings = st.number_input("Savings %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_savings), key="val_savings_input")
 
     with col_ledger:
-        # 3. Translated Historical Ledger
-        st.markdown("<h5 style='margin-top:0; padding-top:0;'>Historical Timeline Ledger</h5>", unsafe_allow_html=True)
-        display_df = st.session_state.temp_income_history.copy()
-        if not past_dates_df.empty:
-            display_df = pd.concat([display_df, past_dates_df], ignore_index=True).drop_duplicates(subset=['Effective Date'], keep='last').sort_values('Effective Date')
-        edited_inc_df = st.data_editor(display_df, use_container_width=True, num_rows="dynamic", key="income_inline_grid_editor")
+        st.markdown("<h4 style='margin-top:0; padding-top:0;'>📝 Paycheck Amounts Ledger</h4>", unsafe_allow_html=True)
+        st.caption("Double-click any cell in **Net Amount ($)** to log what you were paid on that day.")
         
-        if st.button("Save Ledger Edits", use_container_width=True):
-            st.session_state.temp_pct_split_needs = st.session_state.get("val_needs_input", st.session_state.temp_pct_split_needs)
-            st.session_state.temp_pct_split_wants = st.session_state.get("val_wants_input", st.session_state.temp_pct_split_wants)
-            st.session_state.temp_pct_split_savings = st.session_state.get("val_savings_input", st.session_state.temp_pct_split_savings)
-            st.session_state.temp_income_history = edited_inc_df.sort_values('Effective Date').reset_index(drop=True)
-            st.session_state.show_unified_modal = True
-            st.rerun()
+        display_df = st.session_state.temp_income_history.copy()
+        
+        if display_df.empty:
+            display_df = pd.DataFrame(columns=["Effective Date", "Amount"])
+        else:
+            display_df['Effective Date'] = pd.to_datetime(display_df['Effective Date']).dt.date
+            display_df = display_df.sort_values('Effective Date').reset_index(drop=True)
 
-    # 5. Budget Allocations
-    st.markdown("### Budget Allocations")
-    val_needs = st.number_input("Needs %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_needs), key="val_needs_input")
-    val_wants = st.number_input("Wants %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_wants), key="val_wants_input")
-    val_savings = st.number_input("Savings %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_savings), key="val_savings_input")
+        edited_inc_df = st.data_editor(
+            display_df, 
+            use_container_width=True, 
+            num_rows="fixed", 
+            key="income_auto_dates_grid_editor",
+            column_config={
+                "Effective Date": st.column_config.DateColumn("Pay Date", disabled=True),
+                "Amount": st.column_config.NumberColumn("Net Amount ($)", min_value=0.0, format="$%.2f", required=True)
+            }
+        )
+        
+        if st.button("Stage Ledger Changes", use_container_width=True):
+            st.session_state.temp_income_history = edited_inc_df.dropna(subset=['Effective Date', 'Amount'])
+            st.toast("Amounts staged successfully!", icon="💾")
 
-    if val_needs + val_wants + val_savings == 100.0 or (val_needs == 0 and val_wants == 0 and val_savings == 0):
-        if st.button("💾 Save All Changes", use_container_width=True):
-            final_df = edited_inc_df.dropna(subset=['Effective Date']).sort_values('Effective Date')
+    st.markdown("---")
+    if (val_needs + val_wants + val_savings == 100.0) or (val_needs == 0 and val_wants == 0 and val_savings == 0):
+        if st.button("💾 Save All Changes & Calculate Split History", use_container_width=True):
+            final_df = edited_inc_df.dropna(subset=['Effective Date', 'Amount']).copy()
+            final_df['Effective Date'] = pd.to_datetime(final_df['Effective Date']).dt.date
+            final_df = final_df.sort_values('Effective Date').reset_index(drop=True)
             
-            # Generate Auto-Deposits
-            st.session_state.savings_ledger = st.session_state.savings_ledger[st.session_state.savings_ledger["Type"] != "Auto-Deposit"]
-            new_sav_rows = []
-            for _, row in final_df[final_df['Effective Date'] <= datetime.now().date()].iterrows():
-                sav_pool = float(row['Amount']) * (val_savings / 100.0)
-                for b_name, b_data in st.session_state.bucket_config.items():
-                    if (dep := sav_pool * (float(b_data.get("pct", 0.0)) / 100.0)) > 0:
-                        new_sav_rows.append({"Date": row['Effective Date'], "Fund": b_name, "Type": "Auto-Deposit", "Note": "Payday Allocation", "Amount": dep})
-            if new_sav_rows:
-                st.session_state.savings_ledger = pd.concat([st.session_state.savings_ledger, pd.DataFrame(new_sav_rows)], ignore_index=True)
+            st.session_state.savings_ledger = calculate_historical_savings_splits(
+                income_df=final_df,
+                savings_percentage=val_savings,
+                bucket_config=st.session_state.bucket_config,
+                current_savings_ledger=st.session_state.savings_ledger
+            )
 
             st.session_state.income_history = final_df
-            st.session_state.pct_split_needs, st.session_state.pct_split_wants, st.session_state.pct_split_savings = val_needs, val_wants, val_savings
+            st.session_state.pct_split_needs = val_needs
+            st.session_state.pct_split_wants = val_wants
+            st.session_state.pct_split_savings = val_savings
             st.session_state.starting_savings_balance = new_starting_savings
-            st.session_state.temp_anchor_mode = new_anchor
             st.rerun()
     else:
-        st.error("Percentages must sum to 100%.")
+        st.error("❌ Budget Allocation percentages must sum up to exactly 100%.")
+
 
 @st.dialog("📋 Edit My Fixed Monthly Bills", width="large")
 def render_bills_modal():
@@ -138,6 +157,7 @@ def render_bills_modal():
             st.session_state.fixed_bills = [dict(bill) for bill in st.session_state.temp_fixed_bills]
             st.rerun()
 
+
 @st.dialog("🛠️ Edit Expense Options & Types", width="large")
 def render_category_modal():
     st.markdown("### Expenses & Types")
@@ -187,9 +207,11 @@ def render_category_modal():
             st.session_state.custom_categories = dict(st.session_state.temp_custom_categories)
             st.rerun()
 
+
 @st.dialog("📜 View Transaction History", width="large")
 def render_ledger_modal():
     st.dataframe(st.session_state.expenses, use_container_width=True)
+
 
 @st.dialog("🛠️ Configure Envelopes & Targets", width="large")
 def render_combined_envelopes_modal():
@@ -305,6 +327,7 @@ def render_combined_envelopes_modal():
             st.session_state.bucket_config = {k: dict(v) for k, v in st.session_state.temp_bucket_config.items()}
             st.session_state.bucket_targets = dict(st.session_state.temp_bucket_targets)
             st.rerun()
+
 
 @st.dialog("📜 Historical Savings Ledger", width="large")
 def render_savings_history_modal():
