@@ -43,15 +43,15 @@ def init_session_state():
     if 'custom_categories' not in st.session_state:
         st.session_state.custom_categories = {}
 
-    # --- Timeline Anchors ---
+    # --- Timeline Anchors (Initialized Blank for Live Selection) ---
     if 'next_payday' not in st.session_state:
-        st.session_state.next_payday = datetime.now().date()
+        st.session_state.next_payday = None
         
     if 'pay_frequency' not in st.session_state:
         st.session_state.pay_frequency = "Bi-weekly"
 
     if 'anchor_mode' not in st.session_state:
-        st.session_state.anchor_mode = "Next Payday"
+        st.session_state.anchor_mode = "First Payday of the Year"
         
     if 'first_payday' not in st.session_state:
-        st.session_state.first_payday = datetime(datetime.now().year, 1, 1).date()
+        st.session_state.first_payday = None
