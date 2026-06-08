@@ -15,18 +15,21 @@ def render_unified_income_splits_modal():
     with col_inputs:
         st.markdown("#### ⚙️ Auto-Generate Pay Dates")
         
-        # Pull from session state safely
-        staged_first_payday = st.session_state.get("first_payday", None)
-        
-        # Fixed: Added clear default constraints so Streamlit allows a blank default value safely
-        chosen_first_payday = st.date_input(
-            "First Payday of the Year:", 
-            value=staged_first_payday,
-            min_value=datetime(datetime.now().year - 1, 1, 1).date(),
-            max_value=datetime(datetime.now().year + 1, 12, 31).date(),
-            placeholder="Select your calendar start date...",
-            key="modal_first_payday_input"
+        # Check box toggle tool to declare if calendar timeline should be turned on
+        has_payday_setup = st.checkbox(
+            "Configure / Enable Payday Timeline", 
+            value=(st.session_state.get("first_payday") is not None),
+            key="modal_payday_timeline_toggle"
         )
+        
+        chosen_first_payday = None
+        if has_payday_setup:
+            fallback_date = st.session_state.get("first_payday") if st.session_state.get("first_payday") is not None else datetime(datetime.now().year, 1, 1).date()
+            chosen_first_payday = st.date_input(
+                "First Payday of the Year:", 
+                value=fallback_date,
+                key="modal_first_payday_input"
+            )
         
         frequency_opts = ["Weekly", "Bi-weekly", "Monthly"]
         chosen_freq = st.selectbox(
@@ -36,8 +39,8 @@ def render_unified_income_splits_modal():
         )
         
         if st.button("🗓️ Generate/Refresh Pay Dates", use_container_width=True):
-            if chosen_first_payday is None:
-                st.error("Please pick a valid start date before generating dates.")
+            if not has_payday_setup or chosen_first_payday is None:
+                st.error("Please check the configuration box and select a date first.")
             else:
                 st.session_state.temp_income_history = generate_timeline_dates(
                     first_payday=chosen_first_payday,
@@ -110,6 +113,8 @@ def render_unified_income_splits_modal():
             st.session_state.pct_split_wants = val_wants
             st.session_state.pct_split_savings = val_savings
             st.session_state.starting_savings_balance = new_starting_savings
+            if not has_payday_setup:
+                st.session_state.first_payday = None
             st.rerun()
     else:
         st.error("❌ Budget Allocation percentages must sum up to exactly 100%.")
