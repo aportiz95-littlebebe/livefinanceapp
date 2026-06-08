@@ -38,14 +38,85 @@ def pandas_to_date(column):
 
 
 # =====================================================================
-# CORE LEDGER CALCULATIONS
+# CORE BUDGET & LEDGER CALCULATIONS ENGINE
 # =====================================================================
 
+def get_ordinal_suffix(day):
+    """Returns the ordinal suffix (st, nd, rd, th) for a given day integer."""
+    if 11 <= day <= 13: return f"{day}th"
+    return f"{day}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th') }"
+
+
+def process_bills_for_period(fixed_bills, start_date, end_date):
+    """
+    Scans the bills configuration list and aggregates items whose calendar 
+    due day falls within the active pay period range boundaries.
+    """
+    total_amount = 0.0
+    formatted_bullets = []
+    
+    for bill in fixed_bills:
+        if bill.get("Amount", 0.0) > 0:
+            current_check = start_date
+            while current_check <= end_date:
+                if current_check.day == bill.get("Due Day", 1):
+                    amt = bill["Amount"]
+                    total_amount += amt
+                    formatted_bullets.append(f"* **{bill['Name']}:** ${amt:,.2f} on the {get_ordinal_suffix(bill['Due Day'])}")
+                    break
+                current_check += timedelta(days=1)
+                
+    return total_amount, formatted_bullets
+
+
+def compute_budget_metrics(current_income, pct_needs, pct_wants, expenses_df, fixed_bills, current_start, current_end):
+    """
+    Executes the analytical mathematics to determine spending targets, 
+    actual category outputs, extra inflows, and remaining budget allowances.
+    """
+    needs_target = current_income * (pct_needs / 100.0)
+    wants_target = current_income * (pct_wants / 100.0)
+    
+    wants_spent, needs_spent, extra_inc = 0.0, 0.0, 0.0
+    
+    if expenses_df is not None and not expenses_df.empty:
+        df_exp = expenses_df.copy()
+        df_exp['Date'] = pd.to_datetime(df_exp['Date']).dt.date
+        period_expenses = df_exp[(df_exp['Date'] >= current_start) & (df_exp['Date'] <= current_end)]
+        
+        if not period_expenses.empty:
+            wants_spent = period_expenses[period_expenses['Category'] == "Wants"]["Amount"].sum()
+            needs_spent = period_expenses[period_expenses['Category'] == "Needs"]["Amount"].sum()
+            extra_inc = -period_expenses[period_expenses['Category'] == "Extra Income"]["Amount"].sum()
+
+    # Call extracted bills analyzer
+    bills_total, bills_bullets = process_bills_for_period(fixed_bills, current_start, current_end)
+    
+    total_needs_burden = needs_spent + bills_total
+    needs_overage = total_needs_burden - needs_target
+    
+    if needs_overage > 0:
+        wants_remaining = wants_target - wants_spent + extra_inc - needs_overage
+    else:
+        wants_remaining = wants_target - wants_spent + extra_inc
+        
+    needs_remaining = needs_target - total_needs_burden
+    
+    return {
+        "needs_target": needs_target,
+        "wants_target": wants_target,
+        "wants_spent": wants_spent,
+        "total_needs_burden": total_needs_burden,
+        "needs_overage": needs_overage,
+        "wants_remaining": wants_remaining,
+        "needs_remaining": needs_remaining,
+        "bills_total": bills_total,
+        "bills_bullets": bills_bullets
+    }
+
+
 def generate_timeline_dates(first_payday, frequency, existing_income_df=None):
-    """
-    Generates a sequence of pay dates from the first payday until today.
-    Merges with existing history to protect typed-in paycheck amounts.
-    """
+    """Generates a sequence of pay dates from the first payday until today."""
     interval_days = 7 if frequency == "Weekly" else (30 if frequency == "Monthly" else 14)
     
     generated_dates = []
@@ -73,11 +144,7 @@ def generate_timeline_dates(first_payday, frequency, existing_income_df=None):
 
 
 def calculate_historical_savings_splits(income_df, savings_percentage, bucket_config, current_savings_ledger):
-    """
-    Flushes out old auto-deposits and calculates new historical distributions 
-    for every individual paycheck based on its explicit net value.
-    """
-    # Filter out old automatic records to prevent duplicate compounding
+    """Flushes out old auto-deposits and calculates new historical distributions."""
     updated_ledger = current_savings_ledger[current_savings_ledger["Type"] != "Auto-Deposit"].copy()
     
     new_sav_rows = []
@@ -85,10 +152,8 @@ def calculate_historical_savings_splits(income_df, savings_percentage, bucket_co
         payday_date = row['Effective Date']
         payday_amount = float(row['Amount'])
         
-        # Determine the total pool allocated toward savings for this check
         sav_pool = payday_amount * (savings_percentage / 100.0)
         
-        # Split that sub-pool into individual envelope targets
         for b_name, b_data in bucket_config.items():
             b_pct = float(b_data.get("pct", 0.0))
             if (dep := sav_pool * (b_pct / 100.0)) > 0:
@@ -106,10 +171,7 @@ def calculate_historical_savings_splits(income_df, savings_percentage, bucket_co
 
 
 def calculate_ytd_savings(income_history_df, pct_split_savings, today_date):
-    """
-    Calculates total lifetime savings accumulations and current year YTD savings
-    accumulations directly from the manual income ledger.
-    """
+    """Calculates total lifetime and current year YTD savings accumulations."""
     accumulated_lifetime = 0.0
     accumulated_ytd = 0.0
     
@@ -117,12 +179,10 @@ def calculate_ytd_savings(income_history_df, pct_split_savings, today_date):
         df_inc = income_history_df.copy()
         df_inc['Effective Date'] = pd.to_datetime(df_inc['Effective Date']).dt.date
         
-        # 1. Total historic savings contributions across the lifetime of the ledger
         historical_paychecks = df_inc[df_inc['Effective Date'] <= today_date]
         for _, row in historical_paychecks.iterrows():
             accumulated_lifetime += float(row['Amount']) * (pct_split_savings / 100.0)
             
-        # 2. Filter exclusively for paychecks earned within the current calendar year (YTD)
         ytd_paychecks = df_inc[(df_inc['Effective Date'] <= today_date) & (df_inc['Effective Date'].apply(lambda x: x.year == today_date.year))]
         for _, row in ytd_paychecks.iterrows():
             accumulated_ytd += float(row['Amount']) * (pct_split_savings / 100.0)
