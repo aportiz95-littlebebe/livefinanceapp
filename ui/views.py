@@ -249,7 +249,7 @@ def render_savings_dashboard():
     unassigned_pct = max(0.0, 100.0 - total_assigned_pct)
     unassigned_ledger = df_sav[df_sav["Fund"] == "Unallocated Savings"]["Amount"].sum() if not df_sav.empty else 0.0
     
-    # Core Engine Data Pulling Block
+    # Engine Calculations Pull
     accumulated_payday_savings, accumulated_payday_savings_ytd = calculate_ytd_savings(
         income_history_df=st.session_state.income_history,
         pct_split_savings=st.session_state.pct_split_savings,
@@ -263,87 +263,18 @@ def render_savings_dashboard():
     unassigned_bal = net_total_savings - allocated_total
     total_background_auto = df_sav[df_sav["Type"] == "Auto-Deposit"]["Amount"].sum() if not df_sav.empty else 0.0
 
-    # Layout presentation metrics layer matrix elements
-    metric_col1, metric_col2 = st.columns(2)
-    with metric_col1:
+    # TWO COLUMN CORE LAYOUT DEPLOYED HERE
+    # Left column contains high-level metric targets, right column holds progress grids
+    workspace_col_left, workspace_col_right = st.columns([1.1, 1.4])
+    
+    with workspace_col_left:
+        st.markdown("### 📊 Overall Matrix")
         st.metric(label="🏦 Grand Total Savings (Sum of All Buckets)", value=f"${net_total_savings:,.2f}", delta=f"+${total_background_auto:,.2f} via Auto-Payday")
-    with metric_col2:
+        st.write(" ") # Padding spacer spacer row element
         st.metric(label="📈 YTD Savings Deposited (This Year)", value=f"${accumulated_payday_savings_ytd:,.2f}")
-
-    st.markdown("---")
-
-    st.markdown("### 📊 Active Savings Envelopes & Target Goals")
-    st.markdown("Review current funds allocated against your active target benchmarks.")
-    st.write(" ")
-    
-    all_tracking_buckets = list(st.session_state.bucket_targets.keys())
-    
-    for b_name in all_tracking_buckets:
-        st.markdown(f"#### 💼 {b_name}")
         
-        if b_name == "Unallocated Savings":
-            cur_bal = unassigned_bal
-            flow_pct = unassigned_pct
-        elif b_name in bucket_balances:
-            cur_bal = bucket_balances[b_name]
-            flow_pct = float(st.session_state.bucket_config[b_name].get("pct", 0.0))
-        else:
-            cur_bal = 0.0
-            flow_pct = 0.0
-            
-        biweekly_flow = savings_target * (flow_pct / 100.0)
-        target_val = st.session_state.bucket_targets.get(b_name, 0.0)
-        
-        col1, col2, col3, col4 = st.columns([1.0, 1.0, 1.0, 1.5])
-        
-        with col1: 
-            st.metric("Overall Total Value", f"${cur_bal:,.2f}")
-        with col2:
-            st.metric("Target Milestone", f"${target_val:,.2f}")
-        with col3:
-            if target_val > 0:
-                remaining = target_val - cur_bal
-                if remaining <= 0:
-                    st.metric("Remaining Needed", "$0.00")
-                else:
-                    st.metric("Remaining Needed", f"${remaining:,.2f}")
-            else:
-                st.caption("No target milestone set.")
-                
-        with col4:
-            if target_val > 0:
-                remaining = target_val - cur_bal
-                if remaining <= 0:
-                    st.success("✨ Goal Fully Funded!")
-                else:
-                    if biweekly_flow > 0:
-                        paychecks_req = int(-(-remaining // biweekly_flow))
-                        
-                        next_payday_date = st.session_state.next_payday
-                        if today > next_payday_date:
-                            days_diff = (today - next_payday_date).days
-                            intervals_needed = (days_diff // interval_days) + 1
-                            next_payday_date = next_payday_date + timedelta(days=intervals_needed * interval_days)
-
-                        accomplish_date = next_payday_date + timedelta(days=(paychecks_req - 1) * interval_days)
-                        
-                        st.write(f"**Timeline:** ~{paychecks_req} paychecks")
-                        st.write(f"📆 *Est. Date:* **{accomplish_date.strftime('%b %d, %Y')}**")
-                        st.caption(f"Inflow: ${biweekly_flow:,.2f} / pay period")
-                    else:
-                        st.write("**Timeline:** Manual Only")
-                        st.caption("⚠️ 0% automatic paycheck allocation flow.")
-            else:
-                st.caption("Adjust configurations in 'Configure Envelopes' to track timelines.")
-                
-        if target_val > 0:
-            prog_ratio = min(max(cur_bal / target_val, 0.0), 1.0)
-            st.progress(prog_ratio)
-            
         st.markdown("---")
-
-    row_left_logger, row_right_milestones = st.columns([1.1, 0.9])
-    with row_left_logger:
+        # Shifted Logging Tool to sit cleanly on the left column block underneath metrics
         st.markdown("### 📥 Log Savings Activity")
         
         def process_sav_transaction():
@@ -379,19 +310,88 @@ def render_savings_dashboard():
             
         st.button("Add Transaction", use_container_width=True, on_click=process_sav_transaction)
 
-    with row_right_milestones:
-        st.markdown("### 🪣 Bucket Distribution Rules")
-        st.info("Your payday auto-deposits split into your buckets according to these percentages.")
+    with workspace_col_right:
+        st.markdown("### 🎯 Active Savings Envelopes & Target Goals")
+        st.markdown("Review current funds allocated against your active target benchmarks.")
+        st.write(" ")
         
-        st.write(f"**Unallocated Savings**")
-        st.caption(f"Catches any unassigned payday % if your buckets don't sum to 100%.")
+        all_tracking_buckets = list(st.session_state.bucket_targets.keys())
         
-        if st.session_state.bucket_config:
-            for b_name, b_data in st.session_state.bucket_config.items():
-                pct_val = b_data.get('pct', 0.0)
-                st.write(f"**{b_name}**")
-                st.progress(pct_val / 100.0)
-                st.caption(f"Receives {pct_val:.1f}% of every payday injection.")
-        else:
-            st.write(" ")
-            st.success("No active buckets. 100% of your funds go to Unallocated Savings. Click 'Configure Envelopes' to create tracker rows!")
+        for b_name in all_tracking_buckets:
+            st.markdown(f"#### 💼 {b_name}")
+            
+            if b_name == "Unallocated Savings":
+                cur_bal = unassigned_bal
+                flow_pct = unassigned_pct
+            elif b_name in bucket_balances:
+                cur_bal = bucket_balances[b_name]
+                flow_pct = float(st.session_state.bucket_config[b_name].get("pct", 0.0))
+            else:
+                cur_bal = 0.0
+                flow_pct = 0.0
+                
+            biweekly_flow = savings_target * (flow_pct / 100.0)
+            target_val = st.session_state.bucket_targets.get(b_name, 0.0)
+            
+            col1, col2, col3, col4 = st.columns([1.0, 1.0, 1.0, 1.5])
+            
+            with col1: 
+                st.metric("Overall Value", f"${cur_bal:,.2f}")
+            with col2:
+                st.metric("Target Goal", f"${target_val:,.2f}")
+            with col3:
+                if target_val > 0:
+                    remaining = target_val - cur_bal
+                    if remaining <= 0:
+                        st.metric("Remaining", "$0.00")
+                    else:
+                        st.metric("Remaining", f"${remaining:,.2f}")
+                else:
+                    st.caption("No target set.")
+                    
+            with col4:
+                if target_val > 0:
+                    remaining = target_val - cur_bal
+                    if remaining <= 0:
+                        st.success("✨ Fully Funded!")
+                    else:
+                        if biweekly_flow > 0:
+                            paychecks_req = int(-(-remaining // biweekly_flow))
+                            
+                            next_payday_date = st.session_state.next_payday
+                            if today > next_payday_date:
+                                days_diff = (today - next_payday_date).days
+                                intervals_needed = (days_diff // interval_days) + 1
+                                next_payday_date = next_payday_date + timedelta(days=intervals_needed * interval_days)
+
+                            accomplish_date = next_payday_date + timedelta(days=(paychecks_req - 1) * interval_days)
+                            
+                            st.write(f"**Timeline:** ~{paychecks_req} checks")
+                            st.write(f"📆 *Est:* **{accomplish_date.strftime('%b %d, %Y')}**")
+                        else:
+                            st.write("**Timeline:** Manual Only")
+                else:
+                    st.caption("Adjust tracking timelines inside setup settings.")
+                    
+            if target_val > 0:
+                prog_ratio = min(max(cur_bal / target_val, 0.0), 1.0)
+                st.progress(prog_ratio)
+                
+            st.markdown("---")
+
+    # Bottom Full Width Split Rules Grid row display banner mapping
+    st.markdown("### 🪣 Bucket Distribution Rules")
+    st.info("Your payday auto-deposits split into your buckets according to these percentages.")
+    
+    st.write(f"**Unallocated Savings**")
+    st.caption(f"Catches any unassigned payday % if your buckets don't sum to 100%.")
+    
+    if st.session_state.bucket_config:
+        for b_name, b_data in st.session_state.bucket_config.items():
+            pct_val = b_data.get('pct', 0.0)
+            st.write(f"**{b_name}**")
+            st.progress(pct_val / 100.0)
+            st.caption(f"Receives {pct_val:.1f}% of every payday injection.")
+    else:
+        st.write(" ")
+        st.success("No active buckets. 100% of your funds go to Unallocated Savings. Click 'Configure Envelopes' to create tracker rows!")
