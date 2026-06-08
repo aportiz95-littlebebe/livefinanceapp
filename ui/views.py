@@ -249,7 +249,7 @@ def render_savings_dashboard():
     unassigned_pct = max(0.0, 100.0 - total_assigned_pct)
     unassigned_ledger = df_sav[df_sav["Fund"] == "Unallocated Savings"]["Amount"].sum() if not df_sav.empty else 0.0
     
-    # CALLS SEPARATED ENGINE COMPUTATIONS OUT OF CORE CALCULATIONS
+    # Core Engine Data Pulling Block
     accumulated_payday_savings, accumulated_payday_savings_ytd = calculate_ytd_savings(
         income_history_df=st.session_state.income_history,
         pct_split_savings=st.session_state.pct_split_savings,
@@ -263,7 +263,7 @@ def render_savings_dashboard():
     unassigned_bal = net_total_savings - allocated_total
     total_background_auto = df_sav[df_sav["Type"] == "Auto-Deposit"]["Amount"].sum() if not df_sav.empty else 0.0
 
-    # DISPLAY METRIC COLUMNS
+    # Layout presentation metrics layer matrix elements
     metric_col1, metric_col2 = st.columns(2)
     with metric_col1:
         st.metric(label="🏦 Grand Total Savings (Sum of All Buckets)", value=f"${net_total_savings:,.2f}", delta=f"+${total_background_auto:,.2f} via Auto-Payday")
