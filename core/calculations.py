@@ -3,6 +3,11 @@ from datetime import datetime, timedelta
 
 def get_period_dates(anchor_date, interval_days, today=None):
     """Calculates start and end dates for current and next periods."""
+    if anchor_date is None:
+        # Fallback parameters if timeline hasn't been set yet
+        if today is None: today = datetime.now().date()
+        return today, today, today, today
+
     if today is None: today = datetime.now().date()
     
     days_since_anchor = (today - anchor_date).days
@@ -47,11 +52,30 @@ def get_ordinal_suffix(day):
     return f"{day}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th') }"
 
 
+def project_payday_cadence(first_payday, pay_frequency, target_year):
+    """
+    Projects all recurring payday dates for a target year based on interval rules.
+    Returns an empty set safely if the first payday is unselected (None).
+    """
+    projected_dates = set()
+    if first_payday is None:
+        return projected_dates
+        
+    run_date = first_payday
+    while run_date.year <= target_year:
+        projected_dates.add(run_date)
+        if pay_frequency == "Weekly":
+            run_date += timedelta(days=7)
+        elif pay_frequency == "Monthly":
+            run_date += timedelta(days=30)
+        else:
+            run_date += timedelta(days=14)
+            
+    return projected_dates
+
+
 def process_bills_for_period(fixed_bills, start_date, end_date):
-    """
-    Scans the bills configuration list and aggregates items whose calendar 
-    due day falls within the active pay period range boundaries.
-    """
+    """Scans fixed bills list and aggregates items due inside the active pay period range."""
     total_amount = 0.0
     formatted_bullets = []
     
@@ -70,10 +94,7 @@ def process_bills_for_period(fixed_bills, start_date, end_date):
 
 
 def compute_budget_metrics(current_income, pct_needs, pct_wants, expenses_df, fixed_bills, current_start, current_end):
-    """
-    Executes the analytical mathematics to determine spending targets, 
-    actual category outputs, extra inflows, and remaining budget allowances.
-    """
+    """Executes the analytical mathematics to determine targets and balances."""
     needs_target = current_income * (pct_needs / 100.0)
     wants_target = current_income * (pct_wants / 100.0)
     
@@ -89,7 +110,6 @@ def compute_budget_metrics(current_income, pct_needs, pct_wants, expenses_df, fi
             needs_spent = period_expenses[period_expenses['Category'] == "Needs"]["Amount"].sum()
             extra_inc = -period_expenses[period_expenses['Category'] == "Extra Income"]["Amount"].sum()
 
-    # Call extracted bills analyzer
     bills_total, bills_bullets = process_bills_for_period(fixed_bills, current_start, current_end)
     
     total_needs_burden = needs_spent + bills_total
@@ -117,6 +137,9 @@ def compute_budget_metrics(current_income, pct_needs, pct_wants, expenses_df, fi
 
 def generate_timeline_dates(first_payday, frequency, existing_income_df=None):
     """Generates a sequence of pay dates from the first payday until today."""
+    if first_payday is None:
+        return pd.DataFrame(columns=["Effective Date", "Amount"])
+
     interval_days = 7 if frequency == "Weekly" else (30 if frequency == "Monthly" else 14)
     
     generated_dates = []
