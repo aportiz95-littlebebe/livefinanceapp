@@ -2,7 +2,13 @@ import streamlit as st
 import pandas as pd
 import calendar
 from datetime import datetime, timedelta
-from core.calculations import get_period_dates, get_income_for_date, calculate_ytd_savings
+from core.calculations import (
+    get_period_dates, 
+    get_income_for_date, 
+    calculate_ytd_savings, 
+    process_bills_for_period, 
+    compute_budget_metrics
+)
 
 def render_budget_dashboard():
     st.markdown("### Budget Dashboard")
@@ -45,55 +51,23 @@ def render_budget_dashboard():
     current_period_start, current_period_end, next_period_start, next_period_end = get_period_dates(anchor_date, interval_days, today)
     current_income = get_income_for_date(st.session_state.income_history, today)
 
-    needs_target = current_income * (st.session_state.pct_split_needs / 100.0)
-    wants_target = current_income * (st.session_state.pct_split_wants / 100.0)
-    savings_target = current_income * (st.session_state.pct_split_savings / 100.0)
+    # Invoke newly isolated computations core function
+    metrics = compute_budget_metrics(
+        current_income=current_income,
+        pct_needs=st.session_state.pct_split_needs,
+        pct_wants=st.session_state.pct_split_wants,
+        expenses_df=st.session_state.expenses,
+        fixed_bills=st.session_state.fixed_bills,
+        current_start=current_period_start,
+        current_end=current_period_end
+    )
 
-    wants_spent, needs_spent, extra_inc = 0.0, 0.0, 0.0
-    period_expenses = pd.DataFrame()
-    if not st.session_state.expenses.empty:
-        df_exp_prep = st.session_state.expenses.copy()
-        df_exp_prep['Date'] = pd.to_datetime(df_exp_prep['Date']).dt.date
-        period_expenses = df_exp_prep[(df_exp_prep['Date'] >= current_period_start) & (df_exp_prep['Date'] <= current_period_end)]
-        if not period_expenses.empty:
-            wants_spent = period_expenses[period_expenses['Category'] == "Wants"]["Amount"].sum()
-            needs_spent = period_expenses[period_expenses['Category'] == "Needs"]["Amount"].sum()
-            extra_inc = -period_expenses[period_expenses['Category'] == "Extra Income"]["Amount"].sum()
-
-    def get_ordinal_suffix(day):
-        if 11 <= day <= 13: return f"{day}th"
-        else: return f"{day}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th') }"
-
-    bills_in_period_total = 0.0
-    formatted_bills_list = []
-    for bill in st.session_state.fixed_bills:
-        if bill["Amount"] > 0:
-            current_date_check = current_period_start
-            while current_date_check <= current_period_end:
-                if current_date_check.day == bill["Due Day"]:
-                    bills_in_period_total += bill["Amount"]
-                    formatted_bills_list.append(f"* **{bill['Name']}:** ${bill['Amount']:,.2f} on the {get_ordinal_suffix(bill['Due Day'])}")
-                    break
-                current_date_check += timedelta(days=1)
-
-    next_bills_total = 0.0
-    next_formatted_bills_list = []
-    for bill in st.session_state.fixed_bills:
-        if bill["Amount"] > 0:
-            next_date_check = next_period_start
-            while next_date_check <= next_period_end:
-                if next_date_check.day == bill["Due Day"]:
-                    next_bills_total += bill["Amount"]
-                    next_formatted_bills_list.append(f"* **{bill['Name']}:** ${bill['Amount']:,.2f} on the {get_ordinal_suffix(bill['Due Day'])}")
-                    break
-                next_date_check += timedelta(days=1)
-
-    total_needs_burden = needs_spent + bills_in_period_total
-    current_bill_deficit = total_needs_burden - needs_target
-    needs_overage = total_needs_burden - needs_target
-    if needs_overage > 0: wants_remaining = wants_target - wants_spent + extra_inc - needs_overage
-    else: wants_remaining = wants_target - wants_spent + extra_inc
-    needs_remaining = needs_target - total_needs_burden
+    # Pull calculations for next period's forecast parameters
+    next_bills_total, next_formatted_bills_list = process_bills_for_period(
+        st.session_state.fixed_bills, 
+        next_period_start, 
+        next_period_end
+    )
 
     dash_top_left, dash_top_mid, dash_top_right = st.columns([1.5, 1.2, 1.2])
     with dash_top_left:
@@ -108,17 +82,18 @@ def render_budget_dashboard():
             ytd_earned = df_ytd['Amount'].sum()
         st.metric(label="📈 YTD Earned", value=f"${ytd_earned:,.2f}")
             
-        st.metric(label=f"Needs Allowance ({st.session_state.pct_split_needs:,.0f}%)", value=f"${needs_target:,.2f}")
-        st.metric(label=f"Wants Allowance ({st.session_state.pct_split_wants:,.0f}%)", value=f"${wants_target:,.2f}")
-        st.metric(label=f"Savings Target ({st.session_state.pct_split_savings:,.0f}%)", value=f"${savings_target:,.2f}")
+        st.metric(label=f"Needs Allowance ({st.session_state.pct_split_needs:,.0f}%)", value=f"${metrics['needs_target']:,.2f}")
+        st.metric(label=f"Wants Allowance ({st.session_state.pct_split_wants:,.0f}%)", value=f"${metrics['wants_target']:,.2f}")
+        st.metric(label=f"Savings Target ({st.session_state.pct_split_savings:,.0f}%)", value=f"${current_income * (st.session_state.pct_split_savings / 100.0):,.2f}")
 
     with dash_top_mid:
         st.markdown("### 📅 Bills Due This Pay Period")
         st.caption(f"Window: **{current_period_start.strftime('%b %d')}** to **{current_period_end.strftime('%b %d')}**")
-        if formatted_bills_list:
-            for bullet in formatted_bills_list: st.markdown(bullet)
-            st.markdown(f"**Total Amount Due: ${bills_in_period_total:,.2f}**")
-            if current_bill_deficit > 0: st.error(f"⚠️ Your bills this period exceed your {st.session_state.pct_split_needs:,.0f}% budget by **${current_bill_deficit:,.2f}**")
+        if metrics['bills_bullets']:
+            for bullet in metrics['bills_bullets']: st.markdown(bullet)
+            st.markdown(f"**Total Amount Due: ${metrics['bills_total']:,.2f}**")
+            if metrics['needs_overage'] > 0: 
+                st.error(f"⚠️ Your bills exceed your {st.session_state.pct_split_needs:,.0f}% budget by **${metrics['needs_overage']:,.2f}**")
         else: st.success("No bills scheduled in this paycheck block.")
 
     with dash_top_right:
@@ -155,54 +130,60 @@ def render_budget_dashboard():
                 
     with side_col_progress:
         st.subheader("📊 Budget Progress")
-        effective_wants_target = wants_target - max(0.0, needs_overage)
-        wants_ratio = min(max(wants_spent / effective_wants_target, 0.0), 1.0) if effective_wants_target > 0 else 0.0
-        st.write(f"**Wants Budget:** Spent ${wants_spent:,.2f} of ${effective_wants_target:,.2f}")
+        effective_wants_target = metrics['wants_target'] - max(0.0, metrics['needs_overage'])
+        wants_ratio = min(max(metrics['wants_spent'] / effective_wants_target, 0.0), 1.0) if effective_wants_target > 0 else 0.0
+        st.write(f"**Wants Budget:** Spent ${metrics['wants_spent']:,.2f} of ${effective_wants_target:,.2f}")
         st.progress(wants_ratio)
-        st.write(f"👉 *Wants Remaining:* **${wants_remaining:,.2f}**")
-        if needs_overage > 0: st.caption(f"⚠️ *Fun money shrunk by **${needs_overage:,.2f}** to patch Needs overages.*")
+        st.write(f"👉 *Wants Remaining:* **${metrics['wants_remaining']:,.2f}**")
+        if metrics['needs_overage'] > 0: st.caption(f"⚠️ *Fun money shrunk by **${metrics['needs_overage']:,.2f}** to patch Needs overages.*")
         st.write("---")
-        st.write(f"**Needs Budget:** Spent ${total_needs_burden:,.2f} of ${needs_target:,.2f}")
-        needs_ratio = min(max(total_needs_burden / needs_target, 0.0), 1.0) if needs_target > 0 else 0.0
+        st.write(f"**Needs Budget:** Spent ${metrics['total_needs_burden']:,.2f} of ${metrics['needs_target']:,.2f}")
+        needs_ratio = min(max(metrics['total_needs_burden'] / metrics['needs_target'], 0.0), 1.0) if metrics['needs_target'] > 0 else 0.0
         st.progress(needs_ratio)
-        st.write(f"👉 *Needs Remaining:* **${needs_remaining:,.2f}**")
-        if needs_remaining > 0:
-            st.success(f"💡 End-of-period sweep potential: **${needs_remaining:,.2f}** to savings!")
+        st.write(f"👉 *Needs Remaining:* **${metrics['needs_remaining']:,.2f}**")
+        if metrics['needs_remaining'] > 0:
+            st.success(f"💡 End-of-period sweep potential: **${metrics['needs_remaining']:,.2f}** to savings!")
 
     st.markdown("---")
     st.subheader("📅 Monthly Bill Calendar")
     year, month = today.year, today.month
-    cal = calendar.Calendar(firstweekday=0)
+    
+    cal = calendar.Calendar(firstweekday=6)
     month_days = cal.monthdayscalendar(year, month)
+    
     bill_map = {}
     for bill in st.session_state.fixed_bills:
-        if bill["Amount"] > 0: bill_map.setdefault(bill["Due Day"], []).append(f"{bill['Name']} (${bill['Amount']:,.2f})")
+        if bill["Amount"] > 0: 
+            bill_map.setdefault(bill["Due Day"], []).append(f"{bill['Name']} (${bill['Amount']:,.2f})")
+
+    active_paydays = set()
+    if not st.session_state.income_history.empty:
+        df_dates = st.session_state.income_history.copy()
+        df_dates['Effective Date'] = pd.to_datetime(df_dates['Effective Date']).dt.date
+        active_paydays = set(df_dates['Effective Date'].tolist())
 
     html_cal = f'<table style="width:100%; border-collapse:collapse; font-family:sans-serif; table-layout:fixed;"><tr>'
-    for day_name in ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]: html_cal += f'<th style="background-color:rgba(0,0,0,0.05); padding:10px; border:1px solid rgba(0,0,0,0.1);">{day_name}</th>'
+    for day_name in ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]: 
+        html_cal += f'<th style="background-color:rgba(0,0,0,0.05); padding:10px; border:1px solid rgba(0,0,0,0.1);">{day_name}</th>'
     html_cal += '</tr>'
+    
     for week in month_days:
         html_cal += "<tr>"
         for day in week:
-            if day == 0: html_cal += '<td style="background-color:rgba(0,0,0,0.02); border:1px solid rgba(0,0,0,0.1); height:115px;"></td>'
+            if day == 0: 
+                html_cal += '<td style="background-color:rgba(0,0,0,0.02); border:1px solid rgba(0,0,0,0.1); height:115px;"></td>'
             else:
                 is_today = "background-color:rgba(124,179,66,0.2); border:2px solid #7cb342;" if (day == today.day and month == today.month) else "background-color:rgba(255,255,255,0.4); border:1px solid rgba(0,0,0,0.1);"
                 html_cal += f'<td style="{is_today} height:115px; vertical-align:top; padding:0px;">'
                 
                 current_cal_date = datetime(year, month, day).date()
-                days_diff = (current_cal_date - st.session_state.next_payday).days
-                is_payday = False
-                
-                if st.session_state.pay_frequency == "Weekly" and days_diff % 7 == 0: is_payday = True
-                elif st.session_state.pay_frequency == "Bi-weekly" and days_diff % 14 == 0: is_payday = True
-                elif st.session_state.pay_frequency == "Monthly" and current_cal_date.day == st.session_state.next_payday.day: is_payday = True
-                
-                if is_payday and not st.session_state.income_history.empty: 
+                if current_cal_date in active_paydays: 
                     html_cal += '<span style="background-color:#2e7d32; color:white; font-size:11px; font-weight:bold; padding:3px 8px; display:block;">💰 Payday!</span>'
                 
                 html_cal += f'<div style="padding:8px;"><span style="font-weight:bold; font-size:14px; color:#555;">{day}</span>'
                 if day in bill_map:
-                    for tag in bill_map[day]: html_cal += f'<span style="background-color:#ffeef0; color:#b71c1c; font-size:11px; padding:3px 6px; margin:2px 0; border-radius:4px; display:block; border-left:3px solid #e53935;">{tag}</span>'
+                    for tag in bill_map[day]: 
+                        html_cal += f'<span style="background-color:#ffeef0; color:#b71c1c; font-size:11px; padding:3px 6px; margin:2px 0; border-radius:4px; display:block; border-left:3px solid #e53935;">{tag}</span>'
                 html_cal += '</div></td>'
         html_cal += "</tr>"
     st.markdown(html_cal + "</table>", unsafe_allow_html=True)
@@ -249,21 +230,18 @@ def render_savings_dashboard():
     unassigned_pct = max(0.0, 100.0 - total_assigned_pct)
     unassigned_ledger = df_sav[df_sav["Fund"] == "Unallocated Savings"]["Amount"].sum() if not df_sav.empty else 0.0
     
-    # Engine Calculations Pull
     accumulated_payday_savings, accumulated_payday_savings_ytd = calculate_ytd_savings(
         income_history_df=st.session_state.income_history,
         pct_split_savings=st.session_state.pct_split_savings,
         today_date=today
     )
 
-    # Grand total savings calculations
     manual_deposits_total = df_sav[df_sav["Type"] != "Auto-Deposit"]["Amount"].sum() if not df_sav.empty else 0.0
     net_total_savings = st.session_state.starting_savings_balance + accumulated_payday_savings + manual_deposits_total
     
     unassigned_bal = net_total_savings - allocated_total
     total_background_auto = df_sav[df_sav["Type"] == "Auto-Deposit"]["Amount"].sum() if not df_sav.empty else 0.0
 
-    # TWO COLUMN CORE LAYOUT
     workspace_col_left, workspace_col_right = st.columns([1.1, 1.4])
     
     with workspace_col_left:
