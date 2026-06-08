@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, date
 from core.calculations import generate_timeline_dates, calculate_historical_savings_splits
 
 @st.dialog("💰 Edit Income & Budgets", width="large")
@@ -15,18 +15,15 @@ def render_unified_income_splits_modal():
     with col_inputs:
         st.markdown("#### ⚙️ Auto-Generate Pay Dates")
         
-        # Check if a first payday exists in session state. If not, use Jan 1st of this year as a safe widget baseline.
-        if st.session_state.get("first_payday") is not None:
-            fallback_date = st.session_state.get("first_payday")
-        else:
-            fallback_date = datetime(datetime.now().year, 1, 1).date()
+        # Pull from session state safely. If it hasn't been changed yet, fall back directly to January 1, 2026.
+        staged_first_payday = st.session_state.get("first_payday")
+        if staged_first_payday is None:
+            staged_first_payday = date(2026, 1, 1)
             
-        st.caption("ℹ️ Set your calendar baseline below, then click **Generate/Refresh Pay Dates** to populate your history.")
-        
-        # Direct date choice input initialized with a safe calendar structure to eliminate NoneType widget crashes
+        # Standard date picker that always initializes with a valid 2026 object baseline
         chosen_first_payday = st.date_input(
             "First Payday of the Year:", 
-            value=fallback_date,
+            value=staged_first_payday,
             format="YYYY-MM-DD",
             key="modal_first_payday_direct_input"
         )
@@ -110,6 +107,7 @@ def render_unified_income_splits_modal():
             st.session_state.pct_split_wants = val_wants
             st.session_state.pct_split_savings = val_savings
             st.session_state.starting_savings_balance = new_starting_savings
+            st.session_state.first_payday = chosen_first_payday
             st.rerun()
     else:
         st.error("❌ Budget Allocation percentages must sum up to exactly 100%.")
