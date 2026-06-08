@@ -103,3 +103,28 @@ def calculate_historical_savings_splits(income_df, savings_percentage, bucket_co
     if new_sav_rows:
         return pd.concat([updated_ledger, pd.DataFrame(new_sav_rows)], ignore_index=True)
     return updated_ledger
+
+
+def calculate_ytd_savings(income_history_df, pct_split_savings, today_date):
+    """
+    Calculates total lifetime savings accumulations and current year YTD savings
+    accumulations directly from the manual income ledger.
+    """
+    accumulated_lifetime = 0.0
+    accumulated_ytd = 0.0
+    
+    if income_history_df is not None and not income_history_df.empty:
+        df_inc = income_history_df.copy()
+        df_inc['Effective Date'] = pd.to_datetime(df_inc['Effective Date']).dt.date
+        
+        # 1. Total historic savings contributions across the lifetime of the ledger
+        historical_paychecks = df_inc[df_inc['Effective Date'] <= today_date]
+        for _, row in historical_paychecks.iterrows():
+            accumulated_lifetime += float(row['Amount']) * (pct_split_savings / 100.0)
+            
+        # 2. Filter exclusively for paychecks earned within the current calendar year (YTD)
+        ytd_paychecks = df_inc[(df_inc['Effective Date'] <= today_date) & (df_inc['Effective Date'].apply(lambda x: x.year == today_date.year))]
+        for _, row in ytd_paychecks.iterrows():
+            accumulated_ytd += float(row['Amount']) * (pct_split_savings / 100.0)
+            
+    return accumulated_lifetime, accumulated_ytd
