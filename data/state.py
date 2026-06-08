@@ -59,9 +59,9 @@ def init_session_state():
     if 'pct_split_needs' not in st.session_state: 
         st.session_state.pct_split_needs = 50.0 if TESTING_MODE else 0.0
     if 'pct_split_wants' not in st.session_state: 
-        st.session_state.pct_split_wants = 30.0 if TESTING_MODE else 0.0
+        st.session_state.pct_split_wants = 20.0 if TESTING_MODE else 0.0  # Corrected to 20%
     if 'pct_split_savings' not in st.session_state: 
-        st.session_state.pct_split_savings = 20.0 if TESTING_MODE else 0.0
+        st.session_state.pct_split_savings = 30.0 if TESTING_MODE else 0.0  # Corrected to 30%
         
     if 'starting_savings_balance' not in st.session_state: 
         st.session_state.starting_savings_balance = 0.0
