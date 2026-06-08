@@ -38,7 +38,7 @@ def pandas_to_date(column):
 
 
 # =====================================================================
-# NEW CORE CALCULATIONS BELOW
+# CORE LEDGER CALCULATIONS
 # =====================================================================
 
 def generate_timeline_dates(first_payday, frequency, existing_income_df=None):
