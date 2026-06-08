@@ -50,7 +50,7 @@ def apply_custom_theme():
                 border: 1px solid rgba(0,0,0,0.04) !important;
             }
             
-            /* Standard Functional Dashboard Buttons Styling Controls */
+            /* Standard Functional Dashboard Buttons Styling Controls (Fixed # Prefix Syntax) */
             div.stButton > button {
                 background-color: #959B75 !important; 
                 border: none !important;
