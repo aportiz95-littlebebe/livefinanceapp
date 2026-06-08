@@ -7,7 +7,8 @@ from core.calculations import (
     get_income_for_date, 
     calculate_ytd_savings, 
     process_bills_for_period, 
-    compute_budget_metrics
+    compute_budget_metrics,
+    project_payday_cadence
 )
 
 def render_budget_dashboard():
@@ -51,7 +52,6 @@ def render_budget_dashboard():
     current_period_start, current_period_end, next_period_start, next_period_end = get_period_dates(anchor_date, interval_days, today)
     current_income = get_income_for_date(st.session_state.income_history, today)
 
-    # Invoke isolated calculations engine
     metrics = compute_budget_metrics(
         current_income=current_income,
         pct_needs=st.session_state.pct_split_needs,
@@ -62,7 +62,6 @@ def render_budget_dashboard():
         current_end=current_period_end
     )
 
-    # Pull calculations for next period's forecast parameters
     next_bills_total, next_formatted_bills_list = process_bills_for_period(
         st.session_state.fixed_bills, 
         next_period_start, 
@@ -145,13 +144,12 @@ def render_budget_dashboard():
             st.success(f"💡 End-of-period sweep potential: **${metrics['needs_remaining']:,.2f}** to savings!")
 
     # =====================================================================
-    # 📅 FIXED MONTHLY BILL CALENDAR SECTION (AUTOMATED PATTERNS)
+    # 📅 FIXED MONTHLY BILL CALENDAR SECTION
     # =====================================================================
     st.markdown("---")
     st.subheader("📅 Monthly Bill Calendar")
     year, month = today.year, today.month
     
-    # Sunday start layout alignment mapping
     cal = calendar.Calendar(firstweekday=6)
     month_days = cal.monthdayscalendar(year, month)
     
@@ -160,19 +158,12 @@ def render_budget_dashboard():
         if bill["Amount"] > 0: 
             bill_map.setdefault(bill["Due Day"], []).append(f"{bill['Name']} (${bill['Amount']:,.2f})")
 
-    # Generate the full cadence sequence starting from the first payday of the year
-    projected_paydays = set()
-    run_date = st.session_state.first_payday
-    
-    # Project dates forward safely through the entire current calendar year window
-    while run_date.year <= year:
-        projected_paydays.add(run_date)
-        if st.session_state.pay_frequency == "Weekly":
-            run_date += timedelta(days=7)
-        elif st.session_state.pay_frequency == "Monthly":
-            run_date += timedelta(days=30)
-        else:  # Bi-weekly standard cadence
-            run_date += timedelta(days=14)
+    # Invoking clean external tracking cadence algorithm out of calculations framework module
+    projected_paydays = project_payday_cadence(
+        first_payday=st.session_state.first_payday,
+        pay_frequency=st.session_state.pay_frequency,
+        target_year=year
+    )
 
     html_cal = f'<table style="width:100%; border-collapse:collapse; font-family:sans-serif; table-layout:fixed;"><tr>'
     for day_name in ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]: 
@@ -190,7 +181,6 @@ def render_budget_dashboard():
                 
                 current_cal_date = datetime(year, month, day).date()
                 
-                # Check if this date falls perfectly on your recurring projected bi-weekly timeline pattern
                 if current_cal_date in projected_paydays: 
                     html_cal += '<span style="background-color:#2e7d32; color:white; font-size:11px; font-weight:bold; padding:3px 8px; display:block;">💰 Payday!</span>'
                 
@@ -349,15 +339,17 @@ def render_savings_dashboard():
                             paychecks_req = int(-(-remaining // biweekly_flow))
                             
                             next_payday_date = st.session_state.next_payday
-                            if today > next_payday_date:
+                            if next_payday_date and today > next_payday_date:
                                 days_diff = (today - next_payday_date).days
                                 intervals_needed = (days_diff // interval_days) + 1
                                 next_payday_date = next_payday_date + timedelta(days=intervals_needed * interval_days)
 
-                            accomplish_date = next_payday_date + timedelta(days=(paychecks_req - 1) * interval_days)
-                            
-                            st.write(f"**Timeline:** ~{paychecks_req} checks")
-                            st.write(f"📆 *Est:* **{accomplish_date.strftime('%b %d, %Y')}**")
+                            if next_payday_date:
+                                accomplish_date = next_payday_date + timedelta(days=(paychecks_req - 1) * interval_days)
+                                st.write(f"**Timeline:** ~{paychecks_req} checks")
+                                st.write(f"📆 *Est:* **{accomplish_date.strftime('%b %d, %Y')}**")
+                            else:
+                                st.write("**Timeline:** Manual Only")
                         else:
                             st.write("**Timeline:** Manual Only")
                 else:
