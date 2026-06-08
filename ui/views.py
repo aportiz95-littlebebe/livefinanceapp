@@ -70,9 +70,9 @@ def render_budget_dashboard():
 
     dash_top_left, dash_top_mid, dash_top_right = st.columns([1.5, 1.2, 1.2])
     with dash_top_left:
-        # Renamed: 💸 Budget Breakdown -> 💸 Budget Overview
+        # UPDATED: 💸 Budget Overview
         st.markdown("### 💸 Budget Overview")
-        # Renamed: Active Base Pay -> Current Base Pay
+        # UPDATED: Current Base Pay
         st.metric(label="Current Base Pay", value=f"${current_income:,.2f}")
         
         ytd_earned = 0.0
@@ -81,17 +81,17 @@ def render_budget_dashboard():
             df_ytd['Effective Date'] = pd.to_datetime(df_ytd['Effective Date']).dt.date
             df_ytd = df_ytd[(df_ytd['Effective Date'] <= today) & (df_ytd['Effective Date'].apply(lambda x: x.year == today.year))]
             ytd_earned = df_ytd['Amount'].sum()
-        # Renamed: 📈 YTD Earned -> 📈 Salary Earned YTD
+        # UPDATED: 📈 Salary Earned YTD
         st.metric(label="📈 Salary Earned YTD", value=f"${ytd_earned:,.2f}")
             
-        # Renamed Allowance labels -> Budget labels
+        # UPDATED: Budget (X%) labels
         st.metric(label=f"Needs Budget ({st.session_state.pct_split_needs:,.0f}%)", value=f"${metrics['needs_target']:,.2f}")
         st.metric(label=f"Wants Budget ({st.session_state.pct_split_wants:,.0f}%)", value=f"${metrics['wants_target']:,.2f}")
         st.metric(label=f"Savings Budget ({st.session_state.pct_split_savings:,.0f}%)", value=f"${current_income * (st.session_state.pct_split_savings / 100.0):,.2f}")
 
     with dash_top_mid:
         st.markdown("### 📅 Bills Due This Pay Period")
-        # Renamed: Window -> Pay Period
+        # UPDATED Subtitle: Pay Period: [Dates]
         st.caption(f"Pay Period: **{current_period_start.strftime('%b %d')}** to **{current_period_end.strftime('%b %d')}**")
         if metrics['bills_bullets']:
             for bullet in metrics['bills_bullets']: st.markdown(bullet)
@@ -102,7 +102,7 @@ def render_budget_dashboard():
 
     with dash_top_right:
         st.markdown("### 🔮 Bills Due Next Pay Period")
-        # Renamed: Window -> Pay Period
+        # UPDATED Subtitle: Pay Period: [Dates]
         st.caption(f"Pay Period: **{next_period_start.strftime('%b %d')}** to **{next_period_end.strftime('%b %d')}**")
         if next_formatted_bills_list:
             for bullet in next_formatted_bills_list: st.markdown(bullet)
@@ -113,20 +113,24 @@ def render_budget_dashboard():
     
     side_col_form, side_col_progress = st.columns([1.1, 0.9])
     with side_col_form:
-        # Renamed: 📝 Log an Expense -> 📝 Log a Transaction
+        # UPDATED: 📝 Log a Transaction
         st.subheader("📝 Log a Transaction")
         category_options = list(st.session_state.custom_categories.keys())
         log_col1, log_col2 = st.columns([1, 1])
-        with log_col1: exp_date = st.date_input("Transaction Date", value=today, key="main_log_date")
+        with log_col1: 
+            # UPDATED Label: Transaction Date
+            exp_date = st.date_input("Transaction Date", value=today, key="main_log_date")
         with log_col2: 
             if category_options:
-                # Renamed Label: Type Option Entry -> Type
+                # UPDATED Label: Type
                 selected_type = st.selectbox("Type", category_options, key="main_log_type")
             else:
                 st.info("Add categories first")
                 selected_type = None
                 
+        # UPDATED Label: Where / Description
         exp_desc = st.text_input("Where / Description", placeholder="e.g., Kroger, Shell", key="main_log_desc")
+        # UPDATED Label: Amount ($)
         exp_amt = st.number_input("Amount ($)", min_value=0.0, value=0.0, step=1.0, format="%.2f", key="main_log_amt")
         if st.button("Add Transaction", use_container_width=True, key="main_log_submit_btn", disabled=not selected_type):
             if exp_desc and exp_amt > 0 and selected_type:
@@ -139,11 +143,13 @@ def render_budget_dashboard():
         st.subheader("📊 Budget Progress")
         effective_wants_target = metrics['wants_target'] - max(0.0, metrics['needs_overage'])
         wants_ratio = min(max(metrics['wants_spent'] / effective_wants_target, 0.0), 1.0) if effective_wants_target > 0 else 0.0
+        # UPDATED: Wants Budget label syntax tracking
         st.write(f"**Wants Budget:** Spent ${metrics['wants_spent']:,.2f} of ${effective_wants_target:,.2f}")
         st.progress(wants_ratio)
         st.write(f"👉 *Wants Remaining:* **${metrics['wants_remaining']:,.2f}**")
         if metrics['needs_overage'] > 0: st.caption(f"⚠️ *Fun money shrunk by **${metrics['needs_overage']:,.2f}** to patch Needs overages.*")
         st.write("---")
+        # UPDATED: Needs Budget label syntax tracking
         st.write(f"**Needs Budget:** Spent ${metrics['total_needs_burden']:,.2f} of ${metrics['needs_target']:,.2f}")
         needs_ratio = min(max(metrics['total_needs_burden'] / metrics['needs_target'], 0.0), 1.0) if metrics['needs_target'] > 0 else 0.0
         st.progress(needs_ratio)
@@ -198,7 +204,7 @@ def render_budget_dashboard():
 
 
 def render_savings_dashboard():
-    # Renamed Tab Title: 💰 Savings & Goals Workspace -> 💰 Savings & Goals Dashboard
+    # UPDATED: 💰 Savings & Goals Dashboard
     st.subheader("💰 Savings & Goals Dashboard")
     
     sav_ctrl_col1, sav_ctrl_col2, sav_ctrl_spacer = st.columns([2.5, 2.0, 5.5])
@@ -254,12 +260,12 @@ def render_savings_dashboard():
     workspace_col_left, workspace_col_right = st.columns([1.1, 1.4])
     
     with workspace_col_left:
-        # Renamed Header: 📊 Overall Matrix -> 📊 Savings Overview
+        # UPDATED: ### 📊 Savings Overview
         st.markdown("### 📊 Savings Overview")
-        # Renamed Metric: 🏦 Grand Total Savings (Sum of All Buckets) -> 🏦 Grand Total Savings
+        # UPDATED: 🏦 Grand Total Savings
         st.metric(label="🏦 Grand Total Savings", value=f"${net_total_savings:,.2f}", delta=f"+${total_background_auto:,.2f} via Auto-Payday")
         st.write(" ") 
-        # Renamed Metric: 📈 YTD Savings Deposited (This Year) -> 📈 Savings Deposited YTD
+        # UPDATED: 📈 Savings Deposited YTD
         st.metric(label="📈 Savings Deposited YTD", value=f"${accumulated_payday_savings_ytd:,.2f}")
         
         st.markdown("---")
@@ -299,9 +305,9 @@ def render_savings_dashboard():
         st.button("Add Transaction", use_container_width=True, on_click=process_sav_transaction)
 
     with workspace_col_right:
-        # Renamed Header: 🎯 Active Savings Envelopes & Target Goals -> 🎯 Savings Buckets & Target Goals
+        # UPDATED: ### 🎯 Savings Buckets & Target Goals
         st.markdown("### 🎯 Savings Buckets & Target Goals")
-        # Renamed Subtitle description
+        # UPDATED: Review current Bucket amounts.
         st.markdown("Review current Bucket amounts.")
         st.write(" ")
         
@@ -326,10 +332,10 @@ def render_savings_dashboard():
             col1, col2, col3, col4 = st.columns([1.0, 1.0, 1.0, 1.5])
             
             with col1: 
-                # Renamed Label: Overall Value -> Overall Amount
+                # UPDATED: Overall Amount
                 st.metric("Overall Amount", f"${cur_bal:,.2f}")
             with col2:
-                # Renamed Label: Target Goal -> Goal Name
+                # UPDATED: Goal Name
                 st.metric("Goal Name", f"${target_val:,.2f}")
             with col3:
                 if target_val > 0:
@@ -337,7 +343,7 @@ def render_savings_dashboard():
                     if remaining <= 0:
                         st.metric("Remaining to Reach", "$0.00")
                     else:
-                        # Renamed Label: Remaining -> Remaining to Reach
+                        # UPDATED: Remaining to Reach
                         st.metric("Remaining to Reach", f"${remaining:,.2f}")
                 else:
                     st.caption("No target set.")
