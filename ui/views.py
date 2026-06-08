@@ -158,7 +158,7 @@ def render_budget_dashboard():
         if bill["Amount"] > 0: 
             bill_map.setdefault(bill["Due Day"], []).append(f"{bill['Name']} (${bill['Amount']:,.2f})")
 
-    # Invoking clean external tracking cadence algorithm out of calculations framework module
+    # Safe visual pull from the cadence engine processor
     projected_paydays = project_payday_cadence(
         first_payday=st.session_state.first_payday,
         pay_frequency=st.session_state.pay_frequency,
