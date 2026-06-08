@@ -10,7 +10,7 @@ def init_session_state():
     # =====================================================================
     # Set this to True to automatically load your paychecks and transactions.
     # Set this to False to completely clear out mock numbers and go live.
-    TESTING_MODE = True 
+    TESTING_MODE = FALSE 
     # =====================================================================
 
     # --- DataFrames ---
