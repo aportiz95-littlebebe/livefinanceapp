@@ -155,7 +155,6 @@ def render_budget_dashboard():
         if bill["Amount"] > 0: 
             bill_map.setdefault(bill["Due Day"], []).append(f"{bill['Name']} (${bill['Amount']:,.2f})")
 
-    # Safe layout pull from the cadence framework engine
     projected_paydays = project_payday_cadence(
         first_payday=st.session_state.first_payday,
         pay_frequency=st.session_state.pay_frequency,
@@ -193,15 +192,17 @@ def render_budget_dashboard():
 def render_savings_dashboard():
     st.subheader("💰 Savings & Goals Workspace")
     
-    sav_ctrl_col1, sav_ctrl_col2, sav_ctrl_spacer = st.columns([2.2, 1.6, 6.2])
+    sav_ctrl_col1, sav_ctrl_col2, sav_ctrl_spacer = st.columns([2.5, 2.0, 5.5])
     with sav_ctrl_col1:
-        if st.button("🛠️ Configure Envelopes & Targets", use_container_width=True, key="btn_buck_conf_v123"): 
+        # Renamed: Configure Envelopes & Targets -> Edit Buckets & Goals
+        if st.button("🛠️ Edit Buckets & Goals", use_container_width=True, key="btn_buck_conf_v123"): 
             st.session_state.temp_bucket_config = {k: dict(v) for k, v in st.session_state.bucket_config.items()}
             st.session_state.temp_bucket_targets = dict(st.session_state.bucket_targets)
             st.session_state.show_sav_buckets_modal = True
             st.rerun()
     with sav_ctrl_col2:
-        if st.button("📜 View Deposit Ledger", use_container_width=True, key="btn_ledger_view_v123"): 
+        # Renamed: View Deposit Ledger -> View Savings History
+        if st.button("📜 View Savings History", use_container_width=True, key="btn_ledger_view_v123"): 
             st.session_state.show_sav_history_modal = True
             st.rerun()
             
