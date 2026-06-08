@@ -15,15 +15,19 @@ def render_unified_income_splits_modal():
     with col_inputs:
         st.markdown("#### ⚙️ Auto-Generate Pay Dates")
         
-        # Safe default parameter boundaries configuration
-        staged_first_payday = st.session_state.get("first_payday")
+        # Check if a first payday exists in session state. If not, use Jan 1st of this year as a safe widget baseline.
+        if st.session_state.get("first_payday") is not None:
+            fallback_date = st.session_state.get("first_payday")
+        else:
+            fallback_date = datetime(datetime.now().year, 1, 1).date()
+            
+        st.caption("ℹ️ Set your calendar baseline below, then click **Generate/Refresh Pay Dates** to populate your history.")
         
-        # Direct date choice input field that starts blank with a placeholder
+        # Direct date choice input initialized with a safe calendar structure to eliminate NoneType widget crashes
         chosen_first_payday = st.date_input(
             "First Payday of the Year:", 
-            value=staged_first_payday,
+            value=fallback_date,
             format="YYYY-MM-DD",
-            placeholder="Choose date to begin...",
             key="modal_first_payday_direct_input"
         )
         
@@ -35,17 +39,14 @@ def render_unified_income_splits_modal():
         )
         
         if st.button("🗓️ Generate/Refresh Pay Dates", use_container_width=True):
-            if chosen_first_payday is None:
-                st.error("❌ Please pick a calendar date before attempting generation steps.")
-            else:
-                st.session_state.temp_income_history = generate_timeline_dates(
-                    first_payday=chosen_first_payday,
-                    frequency=chosen_freq,
-                    existing_income_df=st.session_state.income_history
-                )
-                st.session_state.first_payday = chosen_first_payday
-                st.session_state.pay_frequency = chosen_freq
-                st.toast("Pay dates generated up to today!", icon="📆")
+            st.session_state.temp_income_history = generate_timeline_dates(
+                first_payday=chosen_first_payday,
+                frequency=chosen_freq,
+                existing_income_df=st.session_state.income_history
+            )
+            st.session_state.first_payday = chosen_first_payday
+            st.session_state.pay_frequency = chosen_freq
+            st.toast("Pay dates generated up to today!", icon="2026-06-08")
 
         st.markdown("---")
         new_starting_savings = st.number_input(
