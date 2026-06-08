@@ -12,7 +12,6 @@ def render_unified_income_splits_modal():
     col_inputs, col_ledger = st.columns([1.0, 1.2])
     
     with col_inputs:
-        # UPDATED: #### ⚙️ Generate Pay Dates
         st.markdown("#### ⚙️ Generate Pay Dates")
         
         staged_first_payday = st.session_state.get("first_payday")
@@ -52,14 +51,12 @@ def render_unified_income_splits_modal():
         )
         
         st.markdown("---")
-        # UPDATED: ### 📊 Budget Limits
         st.markdown("### 📊 Budget Limits")
         val_needs = st.number_input("Needs %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_needs), key="val_needs_input")
         val_wants = st.number_input("Wants %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_wants), key="val_wants_input")
         val_savings = st.number_input("Savings %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_savings), key="val_savings_input")
 
     with col_ledger:
-        # UPDATED: 📝 Paycheck Amounts History
         st.markdown("<h4 style='margin-top:0; padding-top:0;'>📝 Paycheck Amounts History</h4>", unsafe_allow_html=True)
         st.caption("Double-click any cell in **Net Amount ($)** to log what you were paid on that day.")
         
@@ -114,7 +111,6 @@ def render_unified_income_splits_modal():
 
 @st.dialog("📋 Edit My Fixed Monthly Bills", width="large")
 def render_bills_modal():
-    # UPDATED: ### Fixed Bills
     st.markdown("### Fixed Bills")
     def toggle_edit(idx, state): st.session_state[f"edit_bill_{idx}"] = state
     def save_bill(idx):
@@ -174,14 +170,23 @@ def render_category_modal():
     st.markdown("### Expenses & Types")
     def toggle_edit_cat(idx, state): st.session_state[f"edit_cat_{idx}"] = state
     def save_cat(idx):
+        old_name = list(st.session_state.temp_custom_categories.keys())[idx]
         new_name = st.session_state[f"edit_c_name_{idx}"]
         new_bucket = st.session_state[f"edit_c_bucket_{idx}"]
+        
+        # FIX: Ensure historical expense data follows the new category name
+        if not st.session_state.expenses.empty:
+            if new_name != old_name:
+                st.session_state.expenses.loc[st.session_state.expenses['Sub-Category'] == old_name, 'Sub-Category'] = new_name
+            st.session_state.expenses.loc[st.session_state.expenses['Sub-Category'] == new_name, 'Category'] = new_bucket
+
         new_categories = {}
         for i, (k, v) in enumerate(st.session_state.temp_custom_categories.items()):
             if i == idx: new_categories[new_name] = new_bucket
             else: new_categories[k] = v
         st.session_state.temp_custom_categories = new_categories
         st.session_state[f"edit_cat_{idx}"] = False
+        
     def del_cat(idx):
         key_to_del = list(st.session_state.temp_custom_categories.keys())[idx]
         st.session_state.temp_custom_categories.pop(key_to_del, None)
@@ -191,7 +196,6 @@ def render_category_modal():
         is_editing = st.session_state.get(f"edit_cat_{idx}", False)
         show_label = "visible" if idx == 0 else "collapsed"
         c_col1, c_col2, c_col3, c_col4 = st.columns([3.4, 2.0, 0.5, 0.5], vertical_alignment="bottom")
-        # UPDATED Table field columns: Expense Name
         with c_col1: st.text_input("Expense Name", value=opt_name, key=f"edit_c_name_{idx}", disabled=not is_editing, label_visibility=show_label)
         with c_col2: st.selectbox("Bucket", ["Needs", "Wants", "Extra Income"], index=["Needs", "Wants", "Extra Income"].index(opt_bucket) if opt_bucket in ["Needs", "Wants", "Extra Income"] else 0, key=f"edit_c_bucket_{idx}", disabled=not is_editing, label_visibility=show_label)
         with c_col3:
@@ -204,7 +208,6 @@ def render_category_modal():
     st.markdown("---")
     st.markdown("### ✨ Add a New Expense")
     new_c_col1, new_c_col2 = st.columns([3.4, 2.0])
-    # UPDATED Entry label: Expense Name
     with new_c_col1: st.text_input("Expense Name", key="modal_create_c_name")
     with new_c_col2: st.selectbox("Bucket", ["Needs", "Wants", "Extra Income"], key="modal_create_c_bucket")
     def add_cat():
@@ -228,7 +231,6 @@ def render_ledger_modal():
 
 @st.dialog("🛠️ Edit Buckets & Goals", width="large")
 def render_combined_envelopes_modal():
-    # UPDATED: ### 🗂️ Configure Buckets & Goals
     st.markdown("### 🗂️ Configure Buckets & Goals")
     def toggle_edit_buck(idx, state): st.session_state[f"edit_buck_{idx}"] = state
     def save_buck(idx):
@@ -237,7 +239,12 @@ def render_combined_envelopes_modal():
         new_init = float(st.session_state[f"eb_init_{idx}"])
         new_pct = float(st.session_state[f"eb_pct_{idx}"])
         new_tgt = float(st.session_state[f"eb_tgt_{idx}"])
+        
+        # FIX: Ensure historical savings ledger entries are mapped to the new bucket name
         if new_name != old_name and new_name.strip():
+            if not st.session_state.savings_ledger.empty:
+                st.session_state.savings_ledger.loc[st.session_state.savings_ledger['Fund'] == old_name, 'Fund'] = new_name
+            
             st.session_state.temp_bucket_config[new_name] = {"initial": new_init, "pct": new_pct}
             st.session_state.temp_bucket_targets[new_name] = new_tgt
             del st.session_state.temp_bucket_config[old_name]
@@ -257,7 +264,6 @@ def render_combined_envelopes_modal():
         is_editing = st.session_state.get(f"edit_buck_{idx}", False)
         show_label = "visible" if idx == 0 else "collapsed"
         c1, c2, c3, c4, c5, c6 = st.columns([2.0, 1.2, 1.2, 1.4, 0.4, 0.4], vertical_alignment="bottom")
-        # UPDATED Table labels: Savings Bucket, Deposit Allocation (%), Goal Target Amount ($)
         with c1: st.text_input("Savings Bucket", value=b_name, key=f"eb_name_{idx}", disabled=not is_editing, label_visibility=show_label)
         with c2: st.number_input("Current Balance ($)", min_value=0.0, value=float(b_data.get("initial", 0.0)), step=100.0, format="%.2f", key=f"eb_init_{idx}", disabled=not is_editing, label_visibility=show_label)
         with c3: st.number_input("Deposit Allocation (%)", min_value=0.0, max_value=100.0, value=float(b_data.get("pct", 0.0)), step=5.0, format="%.1f", key=f"eb_pct_{idx}", disabled=not is_editing, label_visibility=show_label)
@@ -270,10 +276,8 @@ def render_combined_envelopes_modal():
             else: st.button("❌", key=f"del_b_{idx}", on_click=del_buck, args=(idx,), use_container_width=True)
             
     st.markdown("---")
-    # UPDATED: ### ✨ Create a Savings Bucket
     st.markdown("### ✨ Create a Savings Bucket")
     nc1, nc2, nc3, nc4 = st.columns([2.0, 1.2, 1.2, 1.4])
-    # UPDATED Input labels: New Bucket Name, Deposit Amount (%), Goal Target Amount ($)
     with nc1: st.text_input("New Bucket Name", key="new_b_name")
     with nc2: st.number_input("Current Balance ($)", min_value=0.0, step=100.0, format="%.2f", key="new_b_init")
     with nc3: st.number_input("Deposit Amount (%)", min_value=0.0, max_value=100.0, step=5.0, format="%.1f", key="new_b_pct")
@@ -296,7 +300,6 @@ def render_combined_envelopes_modal():
     custom_unbacked_goals = [k for k in st.session_state.temp_bucket_targets.keys() if k not in ["Unallocated Savings"] and k not in st.session_state.temp_bucket_config]
     if custom_unbacked_goals:
         st.markdown("---")
-        # UPDATED: ### 🎯 Standalone Custom Goal
         st.markdown("### 🎯 Standalone Custom Goal")
         def save_custom_unbacked(key_name, idx):
             new_n = st.session_state[f"unbk_n_{idx}"]
@@ -320,10 +323,8 @@ def render_combined_envelopes_modal():
                 else: st.button("❌", key=f"dl_unbk_{idx}", on_click=lambda name=g_name: st.session_state.temp_bucket_targets.pop(name))
 
     st.markdown("---")
-    # UPDATED: ### ✨ Create a Custom Goal
     st.markdown("### ✨ Create a Custom Goal")
     uc1, uc2 = st.columns([3.2, 2.6])
-    # UPDATED Labels: Goal Name, Goal Target Amount ($)
     with uc1: st.text_input("Goal Name", key="new_unbacked_name")
     with uc2: st.number_input("Goal Target Amount ($)", min_value=0.0, step=100.0, format="%.2f", key="new_unbacked_val")
     def add_standalone_goal():
@@ -347,7 +348,6 @@ def render_combined_envelopes_modal():
             st.session_state.bucket_config = {k: dict(v) for k, v in st.session_state.temp_bucket_config.items()}
             st.session_state.bucket_targets = dict(st.session_state.temp_bucket_targets)
             st.rerun()
-
 
 @st.dialog("📜 Historical Savings Ledger", width="large")
 def render_savings_history_modal():
