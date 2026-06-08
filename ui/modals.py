@@ -15,9 +15,14 @@ def render_unified_income_splits_modal():
     with col_inputs:
         st.markdown("#### ⚙️ Auto-Generate Pay Dates")
         
+        # Pull the baseline date from session state or default to Jan 1st of the current year
+        default_first_payday = st.session_state.get("first_payday", datetime(datetime.now().year, 1, 1).date())
+        
+        # Added key="modal_first_payday_input" to stop the auto-pop-up behavior
         chosen_first_payday = st.date_input(
             "First Payday of the Year:", 
-            value=st.session_state.get("first_payday", datetime(datetime.now().year, 1, 1).date())
+            value=default_first_payday,
+            key="modal_first_payday_input"
         )
         
         frequency_opts = ["Weekly", "Bi-weekly", "Monthly"]
