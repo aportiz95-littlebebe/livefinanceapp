@@ -15,13 +15,14 @@ def render_unified_income_splits_modal():
     with col_inputs:
         st.markdown("#### ⚙️ Auto-Generate Pay Dates")
         
-        # Pull the baseline date from session state or default to Jan 1st of the current year
-        default_first_payday = st.session_state.get("first_payday", datetime(datetime.now().year, 1, 1).date())
+        # Pull from session state or leave empty as None
+        staged_first_payday = st.session_state.get("first_payday", None)
         
-        # Added key="modal_first_payday_input" to stop the auto-pop-up behavior
+        # Set value=None to keep the box completely blank on setup
         chosen_first_payday = st.date_input(
             "First Payday of the Year:", 
-            value=default_first_payday,
+            value=staged_first_payday,
+            placeholder="Select your calendar start date...",
             key="modal_first_payday_input"
         )
         
@@ -33,14 +34,17 @@ def render_unified_income_splits_modal():
         )
         
         if st.button("🗓️ Generate/Refresh Pay Dates", use_container_width=True):
-            st.session_state.temp_income_history = generate_timeline_dates(
-                first_payday=chosen_first_payday,
-                frequency=chosen_freq,
-                existing_income_df=st.session_state.income_history
-            )
-            st.session_state.first_payday = chosen_first_payday
-            st.session_state.pay_frequency = chosen_freq
-            st.toast("Pay dates generated up to today!", icon="📆")
+            if chosen_first_payday is None:
+                st.error("Please pick a valid start date before generating dates.")
+            else:
+                st.session_state.temp_income_history = generate_timeline_dates(
+                    first_payday=chosen_first_payday,
+                    frequency=chosen_freq,
+                    existing_income_df=st.session_state.income_history
+                )
+                st.session_state.first_payday = chosen_first_payday
+                st.session_state.pay_frequency = chosen_freq
+                st.toast("Pay dates generated up to today!", icon="📆")
 
         st.markdown("---")
         new_starting_savings = st.number_input(
@@ -60,7 +64,7 @@ def render_unified_income_splits_modal():
         st.markdown("<h4 style='margin-top:0; padding-top:0;'>📝 Paycheck Amounts Ledger</h4>", unsafe_allow_html=True)
         st.caption("Double-click any cell in **Net Amount ($)** to log what you were paid on that day.")
         
-        display_df = st.session_state.temp_income_history.copy()
+        display_df = st.session_state.temp_income_history.copy() if 'temp_income_history' in st.session_state else pd.DataFrame()
         
         if display_df.empty:
             display_df = pd.DataFrame(columns=["Effective Date", "Amount"])
@@ -87,8 +91,10 @@ def render_unified_income_splits_modal():
     if (val_needs + val_wants + val_savings == 100.0) or (val_needs == 0 and val_wants == 0 and val_savings == 0):
         if st.button("💾 Save All Changes & Calculate Split History", use_container_width=True):
             final_df = edited_inc_df.dropna(subset=['Effective Date', 'Amount']).copy()
-            final_df['Effective Date'] = pd.to_datetime(final_df['Effective Date']).dt.date
-            final_df = final_df.sort_values('Effective Date').reset_index(drop=True)
+            
+            if not final_df.empty:
+                final_df['Effective Date'] = pd.to_datetime(final_df['Effective Date']).dt.date
+                final_df = final_df.sort_values('Effective Date').reset_index(drop=True)
             
             st.session_state.savings_ledger = calculate_historical_savings_splits(
                 income_df=final_df,
