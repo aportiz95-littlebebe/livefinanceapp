@@ -38,22 +38,13 @@ def pandas_to_date(column):
     import pandas as pd
     return pd.to_datetime(column).dt.date
 
-
-# =====================================================================
-# CORE BUDGET & LEDGER CALCULATIONS ENGINE
-# =====================================================================
-
 def get_ordinal_suffix(day):
     """Returns the ordinal suffix (st, nd, rd, th) for a given day integer."""
     if 11 <= day <= 13: return f"{day}th"
     return f"{day}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th') }"
 
-
 def project_payday_cadence(first_payday, pay_frequency, target_year):
-    """
-    Projects all recurring payday dates for a target year based on interval rules.
-    Returns an empty set if no date has been configured.
-    """
+    """Projects all recurring payday dates for a target year."""
     projected_dates = set()
     if first_payday is None:
         return projected_dates
@@ -69,7 +60,6 @@ def project_payday_cadence(first_payday, pay_frequency, target_year):
             run_date += timedelta(days=14)
             
     return projected_dates
-
 
 def process_bills_for_period(fixed_bills, start_date, end_date):
     """Scans fixed bills list and aggregates items due inside the active pay period range."""
@@ -89,9 +79,8 @@ def process_bills_for_period(fixed_bills, start_date, end_date):
                 
     return total_amount, formatted_bullets
 
-
 def compute_budget_metrics(current_income, pct_needs, pct_wants, expenses_df, fixed_bills, current_start, current_end):
-    """Executes the analytical mathematics to determine targets and balances."""
+    """Executes the mathematical tracking for spending limits and ratios."""
     needs_target = current_income * (pct_needs / 100.0)
     wants_target = current_income * (pct_wants / 100.0)
     
@@ -119,6 +108,11 @@ def compute_budget_metrics(current_income, pct_needs, pct_wants, expenses_df, fi
         
     needs_remaining = needs_target - total_needs_burden
     
+    # Pre-calculate progress bar ratios safely
+    effective_wants_target = wants_target - max(0.0, needs_overage)
+    wants_ratio = min(max(wants_spent / effective_wants_target, 0.0), 1.0) if effective_wants_target > 0 else 0.0
+    needs_ratio = min(max(total_needs_burden / needs_target, 0.0), 1.0) if needs_target > 0 else 0.0
+
     return {
         "needs_target": needs_target,
         "wants_target": wants_target,
@@ -128,9 +122,11 @@ def compute_budget_metrics(current_income, pct_needs, pct_wants, expenses_df, fi
         "wants_remaining": wants_remaining,
         "needs_remaining": needs_remaining,
         "bills_total": bills_total,
-        "bills_bullets": bills_bullets
+        "bills_bullets": bills_bullets,
+        "effective_wants_target": effective_wants_target,
+        "wants_ratio": wants_ratio,
+        "needs_ratio": needs_ratio
     }
-
 
 def generate_timeline_dates(first_payday, frequency, existing_income_df=None):
     """Generates a sequence of pay dates from the first payday until today."""
@@ -162,7 +158,6 @@ def generate_timeline_dates(first_payday, frequency, existing_income_df=None):
         
     return template_df.sort_values('Effective Date').reset_index(drop=True)
 
-
 def calculate_historical_savings_splits(income_df, savings_percentage, bucket_config, current_savings_ledger):
     """Flushes out old auto-deposits and calculates new historical distributions."""
     updated_ledger = current_savings_ledger[current_savings_ledger["Type"] != "Auto-Deposit"].copy()
@@ -189,7 +184,6 @@ def calculate_historical_savings_splits(income_df, savings_percentage, bucket_co
         return pd.concat([updated_ledger, pd.DataFrame(new_sav_rows)], ignore_index=True)
     return updated_ledger
 
-
 def calculate_ytd_savings(income_history_df, pct_split_savings, today_date):
     """Calculates total lifetime and current year YTD savings accumulations."""
     accumulated_lifetime = 0.0
@@ -208,3 +202,53 @@ def calculate_ytd_savings(income_history_df, pct_split_savings, today_date):
             accumulated_ytd += float(row['Amount']) * (pct_split_savings / 100.0)
             
     return accumulated_lifetime, accumulated_ytd
+
+def calculate_ytd_income(income_history_df, today_date):
+    """Extracts UI logic to calculate Total YTD base income safely."""
+    ytd_earned = 0.0
+    if income_history_df is not None and not income_history_df.empty:
+        df_ytd = income_history_df.copy()
+        df_ytd['Effective Date'] = pd.to_datetime(df_ytd['Effective Date']).dt.date
+        df_ytd = df_ytd[(df_ytd['Effective Date'] <= today_date) & (df_ytd['Effective Date'].apply(lambda x: x.year == today_date.year))]
+        ytd_earned = df_ytd['Amount'].sum()
+    return ytd_earned
+
+def calculate_bucket_balances(bucket_config, savings_ledger_df):
+    """Compiles sums for individual buckets, decoupling pure math from the visual layout loop."""
+    bucket_balances = {}
+    allocated_total = 0.0
+    total_assigned_pct = 0.0
+    
+    df_sav = savings_ledger_df.copy() if savings_ledger_df is not None else pd.DataFrame()
+    
+    for b_name, b_data in bucket_config.items():
+        b_init = float(b_data.get("initial", 0.0))
+        b_pct = float(b_data.get("pct", 0.0))
+        total_assigned_pct += b_pct
+        
+        b_ledger = df_sav[df_sav["Fund"] == b_name]["Amount"].sum() if not df_sav.empty else 0.0
+        b_bal = b_init + b_ledger
+        bucket_balances[b_name] = b_bal
+        allocated_total += b_bal
+        
+    unassigned_pct = max(0.0, 100.0 - total_assigned_pct)
+    unassigned_ledger = df_sav[df_sav["Fund"] == "Unallocated Savings"]["Amount"].sum() if not df_sav.empty else 0.0
+    
+    return bucket_balances, allocated_total, unassigned_pct, unassigned_ledger
+
+def calculate_goal_timeline(remaining, biweekly_flow, next_payday_date, interval_days, today):
+    """Calculates forecasting metrics for timeline displays based on flow rate."""
+    if biweekly_flow <= 0 or remaining <= 0:
+        return None, None
+        
+    paychecks_req = int(-(-remaining // biweekly_flow))
+    
+    if next_payday_date and today > next_payday_date:
+        days_diff = (today - next_payday_date).days
+        intervals_needed = (days_diff // interval_days) + 1
+        next_payday_date = next_payday_date + timedelta(days=intervals_needed * interval_days)
+
+    if next_payday_date:
+        accomplish_date = next_payday_date + timedelta(days=(paychecks_req - 1) * interval_days)
+        return paychecks_req, accomplish_date
+    return None, None
