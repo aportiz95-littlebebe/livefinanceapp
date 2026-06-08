@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import calendar
 from datetime import datetime, timedelta
-from core.calculations import get_period_dates, get_income_for_date
+from core.calculations import get_period_dates, get_income_for_date, calculate_ytd_savings
 
 def render_budget_dashboard():
     st.markdown("### Budget Dashboard")
@@ -249,25 +249,27 @@ def render_savings_dashboard():
     unassigned_pct = max(0.0, 100.0 - total_assigned_pct)
     unassigned_ledger = df_sav[df_sav["Fund"] == "Unallocated Savings"]["Amount"].sum() if not df_sav.empty else 0.0
     
-    # CALCULATE REVOLVING DYNAMIC PAYCHECK CONTRIBUTIONS UNTIL TODAY
-    accumulated_payday_savings = 0.0
-    if not st.session_state.income_history.empty:
-        df_inc = st.session_state.income_history.copy()
-        df_inc['Effective Date'] = pd.to_datetime(df_inc['Effective Date']).dt.date
-        # Loop through every logged payday up until today
-        historical_paychecks = df_inc[df_inc['Effective Date'] <= today]
-        for _, row in historical_paychecks.iterrows():
-            # Calculate what amount went to savings from this specific paycheck amount
-            accumulated_payday_savings += float(row['Amount']) * (st.session_state.pct_split_savings / 100.0)
+    # CALLS SEPARATED ENGINE COMPUTATIONS OUT OF CORE CALCULATIONS
+    accumulated_payday_savings, accumulated_payday_savings_ytd = calculate_ytd_savings(
+        income_history_df=st.session_state.income_history,
+        pct_split_savings=st.session_state.pct_split_savings,
+        today_date=today
+    )
 
-    # Grand total savings = Starting Balance + All Historical Payday Accumulations + any Manual Savings Transactions
+    # Grand total savings calculations
     manual_deposits_total = df_sav[df_sav["Type"] != "Auto-Deposit"]["Amount"].sum() if not df_sav.empty else 0.0
     net_total_savings = st.session_state.starting_savings_balance + accumulated_payday_savings + manual_deposits_total
     
     unassigned_bal = net_total_savings - allocated_total
     total_background_auto = df_sav[df_sav["Type"] == "Auto-Deposit"]["Amount"].sum() if not df_sav.empty else 0.0
 
-    st.metric(label="🏦 Grand Total Savings (Sum of All Buckets)", value=f"${net_total_savings:,.2f}", delta=f"+${total_background_auto:,.2f} via Auto-Payday")
+    # DISPLAY METRIC COLUMNS
+    metric_col1, metric_col2 = st.columns(2)
+    with metric_col1:
+        st.metric(label="🏦 Grand Total Savings (Sum of All Buckets)", value=f"${net_total_savings:,.2f}", delta=f"+${total_background_auto:,.2f} via Auto-Payday")
+    with metric_col2:
+        st.metric(label="📈 YTD Savings Deposited (This Year)", value=f"${accumulated_payday_savings_ytd:,.2f}")
+
     st.markdown("---")
 
     st.markdown("### 📊 Active Savings Envelopes & Target Goals")
@@ -317,7 +319,6 @@ def render_savings_dashboard():
                     if biweekly_flow > 0:
                         paychecks_req = int(-(-remaining // biweekly_flow))
                         
-                        # Dynamically find the upcoming target payday date safely
                         next_payday_date = st.session_state.next_payday
                         if today > next_payday_date:
                             days_diff = (today - next_payday_date).days
