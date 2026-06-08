@@ -143,9 +143,6 @@ def render_budget_dashboard():
         if metrics['needs_remaining'] > 0:
             st.success(f"💡 End-of-period sweep potential: **${metrics['needs_remaining']:,.2f}** to savings!")
 
-    # =====================================================================
-    # 📅 FIXED MONTHLY BILL CALENDAR SECTION
-    # =====================================================================
     st.markdown("---")
     st.subheader("📅 Monthly Bill Calendar")
     year, month = today.year, today.month
@@ -158,7 +155,7 @@ def render_budget_dashboard():
         if bill["Amount"] > 0: 
             bill_map.setdefault(bill["Due Day"], []).append(f"{bill['Name']} (${bill['Amount']:,.2f})")
 
-    # Safe visual pull from the cadence engine processor
+    # Safe layout pull from the cadence framework engine
     projected_paydays = project_payday_cadence(
         first_payday=st.session_state.first_payday,
         pay_frequency=st.session_state.pay_frequency,
@@ -181,7 +178,7 @@ def render_budget_dashboard():
                 
                 current_cal_date = datetime(year, month, day).date()
                 
-                if current_cal_date in projected_paydays: 
+                if st.session_state.first_payday is not None and current_cal_date in projected_paydays: 
                     html_cal += '<span style="background-color:#2e7d32; color:white; font-size:11px; font-weight:bold; padding:3px 8px; display:block;">💰 Payday!</span>'
                 
                 html_cal += f'<div style="padding:8px;"><span style="font-weight:bold; font-size:14px; color:#555;">{day}</span>'
