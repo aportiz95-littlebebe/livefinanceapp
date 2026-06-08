@@ -43,7 +43,7 @@ def render_unified_income_splits_modal():
             )
             st.session_state.first_payday = chosen_first_payday
             st.session_state.pay_frequency = chosen_freq
-            st.toast("Pay dates generated up to today!", icon="2026-06-08")
+            st.toast("Pay dates generated up to today!", icon="📆")
 
         st.markdown("---")
         new_starting_savings = st.number_input(
