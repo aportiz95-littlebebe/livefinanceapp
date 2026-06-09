@@ -1,131 +1,76 @@
-# My Finance Dashboard
+# Envelope Savings Hub (BBS 1st Finance App)
 
-![Version](https://img.shields.io/badge/version-15.0-blue.svg)
 ![Streamlit](https://img.shields.io/badge/Streamlit-App-FF4B4B.svg)
 ![Python](https://img.shields.io/badge/Python-3.9+-yellow.svg)
+![Pandas](https://img.shields.io/badge/Pandas-Data-150458.svg)
 
-A comprehensive, state-driven personal finance dashboard built with Streamlit and Pandas. This application handles dynamic pay period tracking, budget splitting, expense tracking with rollover logic, and a highly predictive savings & goal tracking engine.
+The Envelope Savings Hub is a modular, state-driven personal finance application built with Streamlit and Pandas. It provides dynamic budgeting, chronological pay-period tracking, and a highly predictive goal-oriented envelope savings system.
 
----
+## ✨ Core Features
 
-## 🏗️ Upcoming Architecture (Code Splitting Strategy)
-
-To prepare for future scalability, the monolithic `app.py` is being divided into a modular repository. When initializing this new GitHub repo, structure your directories as follows:
-
-```text
-my-finance-dashboard/
-│
-├── main.py                 # Main Streamlit entry point (Page config, tab routing)
-├── ui/
-│   ├── __init__.py
-│   ├── theme.py            # CSS injections, color hex codes, custom styling
-│   ├── modals.py           # @st.dialog functions (Income, Bills, Envelopes)
-│   └── views.py            # Tab layouts (Budget Dashboard, Savings Dashboard)
-│
-├── core/
-│   ├── __init__.py
-│   ├── calculations.py     # Timeline math, period multipliers, budget overages
-│   └── projections.py      # Goal timeline estimations and auto-accrual math
-│
-├── data/
-│   ├── __init__.py
-│   ├── state.py            # Session state initialization and baselines
-│   └── models.py           # DataFrame schemas, transaction processing
-│
-├── requirements.txt
-└── README.md
-```
+* **Dynamic Calendar & Pay Cadence:** Automatically maps Bi-weekly, Weekly, or Monthly paydays across the entire year to align expenses with actual cash flow.
+* **The Overage Cascade:** Smart budget logic where essential overspending ("Needs") automatically deducts from your discretionary pool ("Wants") before breaking the core budget.
+* **Dynamic Savings Distribution:** "Regular Savings" is not a fixed amount; it dynamically calculates as the difference between your total savings pool and the custom percentages allocated to your specific target envelopes.
+* **Goal Projections:** Automatically calculates flow rates into individual savings buckets and forecasts the exact date a goal will be fully funded.
+* **Retroactive Ledger Syncing:** Modifying an expense type or saving bucket name automatically scans and updates historical transactions to maintain data integrity.
 
 ---
 
-## 🧮 The Math & Calculation Engine
+## 🏗️ System Architecture
 
-The application relies heavily on dynamic date calculations and bottom-up summation rather than static numbers. Here is how the core mathematical engines function:
+The application is heavily modularized to separate data initialization, visual identity, mathematical processing, and front-end rendering into distinct components.
 
-### 1. Chronological Timeline Engine
-The app anchors all budget logic to a defined pay schedule (Weekly, Bi-weekly, or Monthly).
-* **Anchor Date:** Can be set to Next Payday, First Payday of the Year, or manually entered.
-* **Period Multiplier:** Calculates exactly how many pay periods have elapsed since the anchor.
-    ```python
-    days_since_anchor = (today - anchor_date).days
-    period_multiplier = days_since_anchor // interval_days
-    ```
-* **Current Period Bounds:** Determines the start and end dates of the *current* active pay period using the multiplier, ensuring expenses are only queried for the current cycle.
+### 1. `state.py` (The Memory Bank)
+Initializes all baseline Streamlit session state variables.
+* Boots up empty Pandas DataFrames for `income_history`, `expenses`, and `savings_ledger`.
+* Establishes the default budget parameters, dictionary schemas for `fixed_bills`, `custom_categories`, and `bucket_config`.
+* Sets the temporal anchor limits (First Payday, Next Payday, Pay Frequency).
 
-### 2. Income & Split Budgets
-* **Historical Base Pay:** The app reads from `income_history` and finds the most recent base pay effective *before or on* today's date.
-* **Target Calculation:** The active income is multiplied by user-defined percentages (Needs, Wants, Savings). 
-    * *Note: Percentages must strictly sum to 100%.*
+### 2. `calculations.py` (The Math Engine)
+Pure Python functions strictly dedicated to number crunching and dataframe manipulation. It contains no visual elements.
+* **Time & Schedule:** `get_period_dates`, `project_payday_cadence`, `generate_timeline_dates`
+* **Income & Expenses:** `get_income_for_date`, `process_bills_for_period`, `calculate_ytd_income`, `compute_budget_metrics`
+* **Savings & Goals:** `calculate_bucket_balances`, `calculate_historical_savings_splits`, `calculate_ytd_savings`, `calculate_goal_timeline`
 
-### 3. Expense Rollover & Overage Logic
-* **Needs Burden:** Calculated as `needs_spent + bills_due_in_period`.
-* **The Overage Cascade:** If the Needs burden exceeds the Needs target, the deficit (`needs_overage`) is automatically subtracted from the `wants_remaining` pool. This ensures that essential overspending naturally shrinks discretionary "Fun Money" rather than breaking the budget.
-* **Extra Income:** Treated as a negative expense, naturally increasing the available pool for Wants.
+### 3. `modals.py` (The Control Panels)
+Houses all interactive data-entry popups using the `@st.dialog` decorator to keep the main dashboard clean.
+* Implements "temp state" variables allowing users to stage changes (edit multiple rows, rename buckets, adjust splits) safely before committing them to the live session state.
+* Functions include: `render_unified_income_splits_modal`, `render_bills_modal`, `render_category_modal`, `render_ledger_modal`, `render_combined_envelopes_modal`, and `render_savings_history_modal`.
 
-### 4. Savings & Projection Engine
-Savings balances are calculated using a bottom-up approach combining historical starting balances, automatic accrual, and manual ledger entries.
-* **Auto-Accrual:** `(savings_target * (bucket_pct / 100.0)) * paydays_passed`. The system implicitly assumes that scheduled payday transfers occurred successfully.
-* **Remaining Savings (Buffer):** Any percentage of the global savings target not explicitly allocated to a custom envelope flows into the `Unallocated Savings` pool, acting as a buffer.
-* **Goal Projections:** For targets with an established goal amount, the engine calculates the remaining deficit and divides it by the expected bi-weekly flow (`savings_target * (flow_pct / 100.0)`). It then adds the required number of pay periods to the calendar to project the exact date the goal will be fully funded.
+### 4. `theme.py` (The Visual Identity)
+Injects custom CSS to override Streamlit's default aesthetics.
+* Implements a cohesive color palette: Cream background (`#F5F7EC`), warm beige metric containers (`#E0CEBA`), and muted sage green action buttons (`#959B75`).
+* Overrides tab selection logic, button hover shadows, disabled form inputs, and custom progress bar mapping.
 
----
-
-## 🎨 UI, Formatting, and Theming
-
-The UI is heavily customized using Streamlit's raw HTML/CSS injection via `st.markdown(unsafe_allow_html=True)`.
-
-### Color Palette (Hex Codes)
-* **Global Background:** `#F9F5EA` (A soft, warm off-white).
-* **Card/Container Background:** `#FFFDFB` (Pure, clean white for contrast).
-* **Text & Typography:** `#3A3A3A` (Dark charcoal, softer than pure black).
-* **Headers:** Background `#EAD8C0` with `#3A3A3A` text, fully rounded (`border-radius: 20px`).
-* **Primary Action Buttons:** `#98966D` (Muted olive/sage green), transitions to `#88865D` on hover with a subtle box-shadow.
-* **Alerts / Warnings:** `#AA4F4E` (Muted brick red).
-* **Progress Bars:** `#526061` (Deep slate grey).
-
-### Spacing & Layout Constraints
-* **Layout:** Wide mode is enforced (`layout="wide"`).
-* **Calendar View:** Built using a raw HTML table. Follows a **Monday-start week** (`calendar.Calendar(firstweekday=0)`) to align with standard working financial cycles. 
-* **Containers:** Extensively uses `st.columns` with specific ratios (e.g., `[2.4, 1.5, 1.5, 1.0, 0.5, 0.5]`) to build highly aligned data-entry tables without relying strictly on `st.data_editor`.
+### 5. `views.py` (The Dashboards)
+The front-end user interface that imports the logic and memory components to render the visual experience.
+* **`render_budget_dashboard()`:** Displays base pay, YTD earnings, Needs/Wants/Savings limit gauges, upcoming bills, an active transaction logger, and a custom HTML chronological monthly calendar.
+* **`render_savings_dashboard()`:** Displays grand total wealth, an activity logger for extra deposits/withdrawals, individual bucket balances, and timeline completion forecasts.
 
 ---
 
-## 🖱️ Interactive Elements & State Management
+## 🚀 Running the Application
 
-### Dialog Modals (`@st.dialog`)
-The application bypasses standard Streamlit expanders in favor of floating modal windows for configuration.
-* `render_unified_income_splits_modal()`: Handles base pay, historical ledger generation, and budget percentages.
-* `render_bills_modal()` & `render_category_modal()`: Uses an inline edit-toggle state (`st.session_state[f"edit_bill_{idx}"]`) allowing users to swap static text out for input fields dynamically row-by-row.
-* `render_combined_envelopes_modal()`: Manages custom buckets, percentages, and standalone unbacked goals.
-
-### Button Workflows
-* All major data mutations are wrapped in a temporary state (`st.session_state.temp_*`). 
-* Changes only commit to the main global state when the user clicks the explicit `🔄 Save Changes` button, which triggers a full `st.rerun()`.
-* Form submission logic strictly disables buttons if required fields (like selecting a category) are missing or if other rows are actively in "Edit" mode.
-
----
-
-## 🚀 Getting Started
-
-### 1. Clone & Install Dependencies
+### 1. Prerequisites
+Ensure you have Python 3.9+ installed along with the required libraries:
 ```bash
-git clone https://github.com/your-username/my-finance-dashboard.git
-cd my-finance-dashboard
-pip install -r requirements.txt
+pip install streamlit pandas
 ```
 
-**Required Packages:**
+### 2. File Structure
+To run the app, the 5 core files must be routed through a `main.py` entry point. Ensure your directory looks like this:
 ```text
-streamlit>=1.35.0
-pandas>=2.0.0
-plotly>=5.14.0
+/your-repo-name
+│── main.py
+│── state.py
+│── calculations.py
+│── modals.py
+│── theme.py
+└── views.py
 ```
 
-### 2. Run the Application
+### 3. Execution
+Launch the app via the terminal:
 ```bash
-streamlit run app.py
+streamlit run main.py
 ```
-
-### 3. Developer Notes
-* **Session State:** On the first run, the app hydrates over 15 different session state variables to establish the baseline empty tables. If you encounter missing key errors during development, clear your browser cache or restart the Streamlit server to re-trigger the init block.
-* **Data Persistence:** Currently, state only lives in RAM. Future iterations (post code-split) should inject a SQLite or JSON file handler into the `data/models.py` layer to serialize the `st.session_state` dataframes on `Save Changes`.
