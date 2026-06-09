@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 from core.calculations import generate_timeline_dates, calculate_historical_savings_splits
+from data.state import push_df_to_google, push_config_to_google
 
 @st.dialog("💰 Edit Income & Budgets", width="large")
 def render_unified_income_splits_modal():
@@ -13,42 +14,20 @@ def render_unified_income_splits_modal():
     
     with col_inputs:
         st.markdown("#### ⚙️ Generate Pay Dates")
-        
-        staged_first_payday = st.session_state.get("first_payday")
-        if staged_first_payday is None:
-            staged_first_payday = date(2026, 1, 1)
+        staged_first_payday = st.session_state.get("first_payday") or date(2026, 1, 1)
             
-        chosen_first_payday = st.date_input(
-            "First Payday of the Year:", 
-            value=staged_first_payday,
-            format="YYYY-MM-DD",
-            key="modal_first_payday_direct_input"
-        )
-        
+        chosen_first_payday = st.date_input("First Payday of the Year:", value=staged_first_payday, format="YYYY-MM-DD", key="modal_first_payday_direct_input")
         frequency_opts = ["Weekly", "Bi-weekly", "Monthly"]
-        chosen_freq = st.selectbox(
-            "Pay Frequency:", 
-            frequency_opts, 
-            index=frequency_opts.index(st.session_state.get("pay_frequency", "Bi-weekly"))
-        )
+        chosen_freq = st.selectbox("Pay Frequency:", frequency_opts, index=frequency_opts.index(st.session_state.get("pay_frequency", "Bi-weekly")))
         
         if st.button("🗓️ Generate Pay Dates", use_container_width=True):
-            st.session_state.temp_income_history = generate_timeline_dates(
-                first_payday=chosen_first_payday,
-                frequency=chosen_freq,
-                existing_income_df=st.session_state.income_history
-            )
+            st.session_state.temp_income_history = generate_timeline_dates(chosen_first_payday, chosen_freq, st.session_state.income_history)
             st.session_state.first_payday = chosen_first_payday
             st.session_state.pay_frequency = chosen_freq
             st.toast("Pay dates generated up to today!", icon="📆")
 
         st.markdown("---")
-        new_starting_savings = st.number_input(
-            "Starting Savings Balance ($):", 
-            value=float(st.session_state.get("starting_savings_balance", 0.0)), 
-            step=100.0, 
-            format="%.2f"
-        )
+        new_starting_savings = st.number_input("Starting Savings Balance ($):", value=float(st.session_state.get("starting_savings_balance", 0.0)), step=100.0, format="%.2f")
         
         st.markdown("---")
         st.markdown("### 📊 Budget Limits")
@@ -60,19 +39,13 @@ def render_unified_income_splits_modal():
         st.markdown("<h4 style='margin-top:0; padding-top:0;'>📝 Paycheck Amounts History</h4>", unsafe_allow_html=True)
         st.caption("Double-click any cell in **Net Amount ($)** to log what you were paid on that day.")
         
-        display_df = st.session_state.temp_income_history.copy() if 'temp_income_history' in st.session_state else pd.DataFrame()
-        
-        if display_df.empty:
-            display_df = pd.DataFrame(columns=["Effective Date", "Amount"])
-        else:
+        display_df = st.session_state.temp_income_history.copy() if 'temp_income_history' in st.session_state else pd.DataFrame(columns=["Effective Date", "Amount"])
+        if not display_df.empty:
             display_df['Effective Date'] = pd.to_datetime(display_df['Effective Date']).dt.date
             display_df = display_df.sort_values('Effective Date').reset_index(drop=True)
 
         edited_inc_df = st.data_editor(
-            display_df, 
-            use_container_width=True, 
-            num_rows="fixed", 
-            key="income_auto_dates_grid_editor",
+            display_df, use_container_width=True, num_rows="fixed", key="income_auto_dates_grid_editor",
             column_config={
                 "Effective Date": st.column_config.DateColumn("Pay Date", disabled=True),
                 "Amount": st.column_config.NumberColumn("Net Amount ($)", min_value=0.0, format="$%.2f", required=True)
@@ -87,27 +60,23 @@ def render_unified_income_splits_modal():
     if (val_needs + val_wants + val_savings == 100.0) or (val_needs == 0 and val_wants == 0 and val_savings == 0):
         if st.button("💾 Save Changes", use_container_width=True, key="btn_final_save_v1"):
             final_df = edited_inc_df.dropna(subset=['Effective Date', 'Amount']).copy()
-            
             if not final_df.empty:
                 final_df['Effective Date'] = pd.to_datetime(final_df['Effective Date']).dt.date
                 final_df = final_df.sort_values('Effective Date').reset_index(drop=True)
             
-            st.session_state.savings_ledger = calculate_historical_savings_splits(
-                income_df=final_df,
-                savings_percentage=val_savings,
-                bucket_config=st.session_state.bucket_config,
-                current_savings_ledger=st.session_state.savings_ledger
-            )
-
+            st.session_state.savings_ledger = calculate_historical_savings_splits(final_df, val_savings, st.session_state.bucket_config, st.session_state.savings_ledger)
             st.session_state.income_history = final_df
             st.session_state.pct_split_needs = val_needs
             st.session_state.pct_split_wants = val_wants
             st.session_state.pct_split_savings = val_savings
             st.session_state.starting_savings_balance = new_starting_savings
+            
+            push_df_to_google("Income", st.session_state.income_history)
+            push_df_to_google("Savings", st.session_state.savings_ledger)
+            push_config_to_google()
             st.rerun()
     else:
         st.error("❌ Budget Allocation percentages must sum up to exactly 100%.")
-
 
 @st.dialog("📋 Edit My Fixed Monthly Bills", width="large")
 def render_bills_modal():
@@ -150,10 +119,8 @@ def render_bills_modal():
     with new_b_col4: st.selectbox("Due Day", list(range(1, 32)), key="modal_create_b_day")
     
     def add_bill():
-        name = st.session_state.get("modal_create_b_name", "")
-        amt = st.session_state.get("modal_create_b_amt", 0.0)
-        bucket = st.session_state.get("modal_create_b_bucket", "Needs")
-        day = st.session_state.get("modal_create_b_day", 1)
+        name, amt = st.session_state.get("modal_create_b_name", ""), st.session_state.get("modal_create_b_amt", 0.0)
+        bucket, day = st.session_state.get("modal_create_b_bucket", "Needs"), st.session_state.get("modal_create_b_day", 1)
         if name and amt >= 0: st.session_state.temp_fixed_bills.append({"Name": name, "Amount": float(amt), "Bucket": bucket, "Due Day": int(day)})
 
     is_any_bill_editing = any(st.session_state.get(f"edit_bill_{i}", False) for i in range(len(st.session_state.temp_fixed_bills)))
@@ -162,8 +129,8 @@ def render_bills_modal():
     with col_save_r:
         if st.button("🔄 Save Changes", use_container_width=True, disabled=is_any_bill_editing): 
             st.session_state.fixed_bills = [dict(bill) for bill in st.session_state.temp_fixed_bills]
+            push_config_to_google()
             st.rerun()
-
 
 @st.dialog("🛠️ Edit Expenses & Types", width="large")
 def render_category_modal():
@@ -171,13 +138,10 @@ def render_category_modal():
     def toggle_edit_cat(idx, state): st.session_state[f"edit_cat_{idx}"] = state
     def save_cat(idx):
         old_name = list(st.session_state.temp_custom_categories.keys())[idx]
-        new_name = st.session_state[f"edit_c_name_{idx}"]
-        new_bucket = st.session_state[f"edit_c_bucket_{idx}"]
+        new_name, new_bucket = st.session_state[f"edit_c_name_{idx}"], st.session_state[f"edit_c_bucket_{idx}"]
         
-        # FIX: Ensure historical expense data follows the new category name
         if not st.session_state.expenses.empty:
-            if new_name != old_name:
-                st.session_state.expenses.loc[st.session_state.expenses['Sub-Category'] == old_name, 'Sub-Category'] = new_name
+            if new_name != old_name: st.session_state.expenses.loc[st.session_state.expenses['Sub-Category'] == old_name, 'Sub-Category'] = new_name
             st.session_state.expenses.loc[st.session_state.expenses['Sub-Category'] == new_name, 'Category'] = new_bucket
 
         new_categories = {}
@@ -211,8 +175,7 @@ def render_category_modal():
     with new_c_col1: st.text_input("Expense Name", key="modal_create_c_name")
     with new_c_col2: st.selectbox("Bucket", ["Needs", "Wants", "Extra Income"], key="modal_create_c_bucket")
     def add_cat():
-        name = st.session_state.get("modal_create_c_name", "")
-        bucket = st.session_state.get("modal_create_c_bucket", "Needs")
+        name, bucket = st.session_state.get("modal_create_c_name", ""), st.session_state.get("modal_create_c_bucket", "Needs")
         if name and name not in st.session_state.temp_custom_categories: st.session_state.temp_custom_categories[name] = bucket
 
     is_any_cat_editing = any(st.session_state.get(f"edit_cat_{i}", False) for i in range(len(st.session_state.temp_custom_categories)))
@@ -221,13 +184,13 @@ def render_category_modal():
     with col_save_r:
         if st.button("🔄 Save Changes", use_container_width=True, disabled=is_any_cat_editing): 
             st.session_state.custom_categories = dict(st.session_state.temp_custom_categories)
+            push_config_to_google()
+            push_df_to_google("Expenses", st.session_state.expenses)
             st.rerun()
-
 
 @st.dialog("📜 View Transaction History", width="large")
 def render_ledger_modal():
     st.dataframe(st.session_state.expenses, use_container_width=True)
-
 
 @st.dialog("🛠️ Edit Buckets & Goals", width="large")
 def render_combined_envelopes_modal():
@@ -236,15 +199,11 @@ def render_combined_envelopes_modal():
     def save_buck(idx):
         old_name = list(st.session_state.temp_bucket_config.keys())[idx]
         new_name = st.session_state[f"eb_name_{idx}"]
-        new_init = float(st.session_state[f"eb_init_{idx}"])
-        new_pct = float(st.session_state[f"eb_pct_{idx}"])
-        new_tgt = float(st.session_state[f"eb_tgt_{idx}"])
+        new_init, new_pct, new_tgt = float(st.session_state[f"eb_init_{idx}"]), float(st.session_state[f"eb_pct_{idx}"]), float(st.session_state[f"eb_tgt_{idx}"])
         
-        # FIX: Ensure historical savings ledger entries are mapped to the new bucket name
         if new_name != old_name and new_name.strip():
             if not st.session_state.savings_ledger.empty:
                 st.session_state.savings_ledger.loc[st.session_state.savings_ledger['Fund'] == old_name, 'Fund'] = new_name
-            
             st.session_state.temp_bucket_config[new_name] = {"initial": new_init, "pct": new_pct}
             st.session_state.temp_bucket_targets[new_name] = new_tgt
             del st.session_state.temp_bucket_config[old_name]
@@ -284,10 +243,8 @@ def render_combined_envelopes_modal():
     with nc4: st.number_input("Goal Target Amount ($)", min_value=0.0, step=500.0, format="%.2f", key="new_b_tgt")
     
     def add_bucket():
-        n = st.session_state.get("new_b_name", "").strip()
-        i = st.session_state.get("new_b_init", 0.0)
-        p = st.session_state.get("new_b_pct", 0.0)
-        t = st.session_state.get("new_b_tgt", 0.0)
+        n, i = st.session_state.get("new_b_name", "").strip(), st.session_state.get("new_b_init", 0.0)
+        p, t = st.session_state.get("new_b_pct", 0.0), st.session_state.get("new_b_tgt", 0.0)
         if n and n not in st.session_state.temp_bucket_config:
             st.session_state.temp_bucket_config[n] = {"initial": i, "pct": p}
             st.session_state.temp_bucket_targets[n] = t
@@ -302,8 +259,7 @@ def render_combined_envelopes_modal():
         st.markdown("---")
         st.markdown("### 🎯 Standalone Custom Goal")
         def save_custom_unbacked(key_name, idx):
-            new_n = st.session_state[f"unbk_n_{idx}"]
-            new_v = float(st.session_state[f"unbk_v_{idx}"])
+            new_n, new_v = st.session_state[f"unbk_n_{idx}"], float(st.session_state[f"unbk_v_{idx}"])
             if new_n != key_name and new_n.strip():
                 st.session_state.temp_bucket_targets[new_n] = new_v
                 del st.session_state.temp_bucket_targets[key_name]
@@ -328,8 +284,7 @@ def render_combined_envelopes_modal():
     with uc1: st.text_input("Goal Name", key="new_unbacked_name")
     with uc2: st.number_input("Goal Target Amount ($)", min_value=0.0, step=100.0, format="%.2f", key="new_unbacked_val")
     def add_standalone_goal():
-        n = st.session_state.get("new_unbacked_name", "").strip()
-        v = st.session_state.get("new_unbacked_val", 0.0)
+        n, v = st.session_state.get("new_unbacked_name", "").strip(), st.session_state.get("new_unbacked_val", 0.0)
         if n and n not in st.session_state.temp_bucket_targets:
             st.session_state.temp_bucket_targets[n] = float(v)
             for k in ["new_unbacked_name", "new_unbacked_val"]: st.session_state[k] = "" if k == "new_unbacked_name" else 0.0
@@ -347,10 +302,14 @@ def render_combined_envelopes_modal():
         if st.button("🔄 Save Changes", use_container_width=True, disabled=lock_sync_button): 
             st.session_state.bucket_config = {k: dict(v) for k, v in st.session_state.temp_bucket_config.items()}
             st.session_state.bucket_targets = dict(st.session_state.temp_bucket_targets)
+            push_config_to_google()
+            push_df_to_google("Savings", st.session_state.savings_ledger)
             st.rerun()
 
 @st.dialog("📜 Historical Savings Ledger", width="large")
 def render_savings_history_modal():
     edited_sav_df = st.data_editor(st.session_state.savings_ledger, use_container_width=True, num_rows="dynamic", key="ledger_grid_v113")
     st.session_state.savings_ledger = edited_sav_df
-    if st.button("Save Changes", use_container_width=True): st.rerun()
+    if st.button("Save Changes", use_container_width=True): 
+        push_df_to_google("Savings", st.session_state.savings_ledger)
+        st.rerun()
