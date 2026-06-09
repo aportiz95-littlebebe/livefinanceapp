@@ -1,10 +1,18 @@
+import sys
+import os
 import streamlit as st
 
-# --- FLATTENED LOCAL IMPORTS ---
-from state import init_session_state, load_data_from_google
-from theme import apply_custom_theme
-from views import render_budget_dashboard, render_savings_dashboard
-from modals import (
+# --- PATH FIX FOR STREAMLIT CLOUD ---
+# This forces the cloud server to recognize the root folder 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+# --- FOLDER IMPORTS ---
+from data.state import init_session_state, load_data_from_google
+from ui.theme import apply_custom_theme
+from ui.views import render_budget_dashboard, render_savings_dashboard
+from ui.modals import (
     render_unified_income_splits_modal, 
     render_bills_modal, 
     render_category_modal, 
