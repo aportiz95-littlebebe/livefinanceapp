@@ -45,30 +45,39 @@ def get_google_sheet():
     return gc.open("Envelope Savings Hub Database")
 
 def load_data_from_google():
-    """Pulls DataFrames and Configs from Google Sheets on boot."""
+    """Pulls DataFrames and Configs from Google Sheets on boot with error handling."""
     try:
         sheet = get_google_sheet()
         
         # 1. Load DataFrames
         for tab_name, state_key in [("Income", "income_history"), ("Expenses", "expenses"), ("Savings", "savings_ledger")]:
             try:
-                records = sheet.worksheet(tab_name).get_all_records()
-                if records: st.session_state[state_key] = pd.DataFrame(records)
-            except gspread.exceptions.WorksheetNotFound:
-                pass 
+                worksheet = sheet.worksheet(tab_name)
+                records = worksheet.get_all_records()
                 
-        # 2. Load Config Dictionaries (Bills, Buckets, Categories)
+                # Only update if we actually got data back
+                if records: 
+                    st.session_state[state_key] = pd.DataFrame(records)
+                else:
+                    # If the sheet is empty, keep the default empty dataframe
+                    st.toast(f"Tab '{tab_name}' is empty, using defaults.", icon="ℹ️")
+                    
+            except gspread.exceptions.WorksheetNotFound:
+                st.toast(f"Tab '{tab_name}' not found, skipping.", icon="⚠️")
+                
+        # 2. Load Config Dictionaries
         try:
             config_records = sheet.worksheet("Config").get_all_records()
             for row in config_records:
-                key, val = row["Key"], json.loads(row["Value"])
-                if key in st.session_state:
-                    st.session_state[key] = val
+                key = row.get("Key")
+                val = row.get("Value")
+                if key and val:
+                    st.session_state[key] = json.loads(val)
         except gspread.exceptions.WorksheetNotFound:
-            pass
+            st.toast("Config tab not found, using defaults.", icon="⚠️")
             
     except Exception as e:
-        st.toast(f"Could not connect to Google Sheets: {e}", icon="⚠️")
+        st.toast(f"Could not connect: {e}", icon="🚫")
 
 def push_df_to_google(sheet_name, df):
     """Pushes a Pandas DataFrame to a specific Google Sheet tab."""
