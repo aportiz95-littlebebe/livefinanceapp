@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import calendar
 from datetime import datetime
+from data.state import push_df_to_google
 from core.calculations import (
     get_period_dates, 
     get_income_for_date, 
@@ -65,11 +66,7 @@ def render_budget_dashboard():
         current_end=current_period_end
     )
 
-    next_bills_total, next_formatted_bills_list = process_bills_for_period(
-        st.session_state.fixed_bills, 
-        next_period_start, 
-        next_period_end
-    )
+    next_bills_total, next_formatted_bills_list = process_bills_for_period(st.session_state.fixed_bills, next_period_start, next_period_end)
 
     dash_top_left, dash_top_mid, dash_top_right = st.columns([1.5, 1.2, 1.2])
     with dash_top_left:
@@ -110,8 +107,7 @@ def render_budget_dashboard():
         log_col1, log_col2 = st.columns([1, 1])
         with log_col1: exp_date = st.date_input("Transaction Date", value=today, key="main_log_date")
         with log_col2: 
-            if category_options:
-                selected_type = st.selectbox("Type", category_options, key="main_log_type")
+            if category_options: selected_type = st.selectbox("Type", category_options, key="main_log_type")
             else:
                 st.info("Add categories first")
                 selected_type = None
@@ -123,7 +119,10 @@ def render_budget_dashboard():
                 assigned_bucket = st.session_state.custom_categories[selected_type]
                 final_amt = exp_amt if assigned_bucket != "Extra Income" else -exp_amt
                 new_row = pd.DataFrame([{"Date": exp_date.strftime("%Y-%m-%d"), "Description": exp_desc, "Category": assigned_bucket, "Sub-Category": selected_type, "Amount": final_amt}])
-                st.session_state.expenses = pd.concat([st.session_state.expenses, new_row], ignore_index=True); st.rerun()
+                
+                st.session_state.expenses = pd.concat([st.session_state.expenses, new_row], ignore_index=True)
+                push_df_to_google("Expenses", st.session_state.expenses)
+                st.rerun()
                 
     with side_col_progress:
         st.subheader("📊 Budget Progress")
@@ -147,38 +146,29 @@ def render_budget_dashboard():
     
     bill_map = {}
     for bill in st.session_state.fixed_bills:
-        if bill["Amount"] > 0: 
-            bill_map.setdefault(bill["Due Day"], []).append(f"{bill['Name']} (${bill['Amount']:,.2f})")
+        if bill["Amount"] > 0: bill_map.setdefault(bill["Due Day"], []).append(f"{bill['Name']} (${bill['Amount']:,.2f})")
 
-    projected_paydays = project_payday_cadence(
-        first_payday=st.session_state.first_payday,
-        pay_frequency=st.session_state.pay_frequency,
-        target_year=year
-    )
+    projected_paydays = project_payday_cadence(st.session_state.first_payday, st.session_state.pay_frequency, year)
 
     html_cal = f'<table style="width:100%; border-collapse:collapse; font-family:sans-serif; table-layout:fixed;"><tr>'
-    for day_name in ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]: 
-        html_cal += f'<th style="background-color:rgba(0,0,0,0.05); padding:10px; border:1px solid rgba(0,0,0,0.1);">{day_name}</th>'
+    for day_name in ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]: html_cal += f'<th style="background-color:rgba(0,0,0,0.05); padding:10px; border:1px solid rgba(0,0,0,0.1);">{day_name}</th>'
     html_cal += '</tr>'
     
     for week in month_days:
         html_cal += "<tr>"
         for day in week:
-            if day == 0: 
-                html_cal += '<td style="background-color:rgba(0,0,0,0.02); border:1px solid rgba(0,0,0,0.1); height:115px;"></td>'
+            if day == 0: html_cal += '<td style="background-color:rgba(0,0,0,0.02); border:1px solid rgba(0,0,0,0.1); height:115px;"></td>'
             else:
                 is_today = "background-color:rgba(124,179,66,0.2); border:2px solid #7cb342;" if (day == today.day and month == today.month) else "background-color:rgba(255,255,255,0.4); border:1px solid rgba(0,0,0,0.1);"
                 html_cal += f'<td style="{is_today} height:115px; vertical-align:top; padding:0px;">'
                 
                 current_cal_date = datetime(year, month, day).date()
-                
                 if st.session_state.first_payday is not None and current_cal_date in projected_paydays: 
                     html_cal += '<span style="background-color:#2e7d32; color:white; font-size:11px; font-weight:bold; padding:3px 8px; display:block;">💰 Payday!</span>'
                 
                 html_cal += f'<div style="padding:8px;"><span style="font-weight:bold; font-size:14px; color:#555;">{day}</span>'
                 if day in bill_map:
-                    for tag in bill_map[day]: 
-                        html_cal += f'<span style="background-color:#ffeef0; color:#b71c1c; font-size:11px; padding:3px 6px; margin:2px 0; border-radius:4px; display:block; border-left:3px solid #e53935;">{tag}</span>'
+                    for tag in bill_map[day]: html_cal += f'<span style="background-color:#ffeef0; color:#b71c1c; font-size:11px; padding:3px 6px; margin:2px 0; border-radius:4px; display:block; border-left:3px solid #e53935;">{tag}</span>'
                 html_cal += '</div></td>'
         html_cal += "</tr>"
     st.markdown(html_cal + "</table>", unsafe_allow_html=True)
@@ -206,16 +196,8 @@ def render_savings_dashboard():
     current_income = get_income_for_date(st.session_state.income_history, today)
     savings_target = current_income * (st.session_state.pct_split_savings / 100.0)
 
-    bucket_balances, allocated_total, unassigned_pct, unassigned_ledger = calculate_bucket_balances(
-        st.session_state.bucket_config, 
-        st.session_state.savings_ledger
-    )
-    
-    accumulated_payday_savings, accumulated_payday_savings_ytd = calculate_ytd_savings(
-        income_history_df=st.session_state.income_history,
-        pct_split_savings=st.session_state.pct_split_savings,
-        today_date=today
-    )
+    bucket_balances, allocated_total, unassigned_pct, unassigned_ledger = calculate_bucket_balances(st.session_state.bucket_config, st.session_state.savings_ledger)
+    accumulated_payday_savings, accumulated_payday_savings_ytd = calculate_ytd_savings(st.session_state.income_history, st.session_state.pct_split_savings, today)
 
     df_sav = st.session_state.savings_ledger.copy()
     manual_deposits_total = df_sav[df_sav["Type"] != "Auto-Deposit"]["Amount"].sum() if not df_sav.empty else 0.0
@@ -249,6 +231,7 @@ def render_savings_dashboard():
                     "Amount": final_amt
                 }])
                 st.session_state.savings_ledger = pd.concat([st.session_state.savings_ledger, new_row], ignore_index=True)
+                push_df_to_google("Savings", st.session_state.savings_ledger)
                 
                 st.session_state["savings_dropdown_v124"] = "Unallocated Savings"
                 st.session_state["sav_type_v124"] = "Extra Deposit"
@@ -256,8 +239,7 @@ def render_savings_dashboard():
                 st.session_state["sav_amt_v124"] = 0.0
 
         sav_input_col1, sav_input_col2 = st.columns(2)
-        with sav_input_col1: 
-            st.date_input(label="Date", value=today, key="sav_date_input_v124")
+        with sav_input_col1: st.date_input(label="Date", value=today, key="sav_date_input_v124")
         with sav_input_col2: 
             fund_opts = ["Unallocated Savings"] + list(st.session_state.bucket_config.keys())
             st.selectbox(label="Target Bucket", options=fund_opts, key="savings_dropdown_v124")
@@ -293,36 +275,26 @@ def render_savings_dashboard():
             
             col1, col2, col3, col4 = st.columns([1.0, 1.0, 1.0, 1.5])
             
-            with col1: 
-                st.metric("Overall Amount", f"${cur_bal:,.2f}")
-            with col2:
-                st.metric("Goal Name", f"${target_val:,.2f}")
+            with col1: st.metric("Overall Amount", f"${cur_bal:,.2f}")
+            with col2: st.metric("Goal Name", f"${target_val:,.2f}")
             with col3:
                 if target_val > 0:
                     remaining = target_val - cur_bal
-                    if remaining <= 0:
-                        st.metric("Remaining to Reach", "$0.00")
-                    else:
-                        st.metric("Remaining to Reach", f"${remaining:,.2f}")
-                else:
-                    st.caption("No target set.")
+                    if remaining <= 0: st.metric("Remaining to Reach", "$0.00")
+                    else: st.metric("Remaining to Reach", f"${remaining:,.2f}")
+                else: st.caption("No target set.")
                     
             with col4:
                 if target_val > 0:
                     remaining = target_val - cur_bal
-                    if remaining <= 0:
-                        st.success("✨ Fully Funded!")
+                    if remaining <= 0: st.success("✨ Fully Funded!")
                     else:
-                        paychecks_req, accomplish_date = calculate_goal_timeline(
-                            remaining, biweekly_flow, st.session_state.next_payday, interval_days, today
-                        )
+                        paychecks_req, accomplish_date = calculate_goal_timeline(remaining, biweekly_flow, st.session_state.next_payday, interval_days, today)
                         if paychecks_req and accomplish_date:
                             st.write(f"**Timeline:** ~{paychecks_req} checks")
                             st.write(f"📆 *Est:* **{accomplish_date.strftime('%b %d, %Y')}**")
-                        else:
-                            st.write("**Timeline:** Manual Only")
-                else:
-                    st.caption("Adjust tracking timelines inside setup settings.")
+                        else: st.write("**Timeline:** Manual Only")
+                else: st.caption("Adjust tracking timelines inside setup settings.")
                     
             if target_val > 0:
                 prog_ratio = min(max(cur_bal / target_val, 0.0), 1.0)
