@@ -73,7 +73,7 @@ def process_bills_for_period(fixed_bills, start_date, end_date):
                 if current_check.day == bill.get("Due Day", 1):
                     amt = bill["Amount"]
                     total_amount += amt
-                    formatted_bullets.append(f驼* **{bill['Name']}:** ${amt:,.2f} on the {get_ordinal_suffix(bill['Due Day'])}")
+                    formatted_bullets.append(f"* **{bill['Name']}:** ${amt:,.2f} on the {get_ordinal_suffix(bill['Due Day'])}")
                     break
                 current_check += timedelta(days=1)
                 
@@ -163,7 +163,7 @@ def calculate_historical_savings_splits(income_df, savings_percentage, bucket_co
     import streamlit as st
     updated_ledger = current_savings_ledger[current_savings_ledger["Type"] != "Auto-Deposit"].copy()
     
-    # NEW: Fetch our customized tracking start date milestone
+    # Fetch our customized tracking start date milestone
     tracking_start = st.session_state.get('tracking_start_date', pd.Timestamp('2026-01-01').date())
     
     new_sav_rows = []
@@ -171,7 +171,7 @@ def calculate_historical_savings_splits(income_df, savings_percentage, bucket_co
         payday_date = row['Effective Date']
         payday_amount = float(row['Amount'])
         
-        # NEW LOOK-AHEAD FILTER: Skip processing any paycheck that occurred BEFORE your tracking start date
+        # Skip processing any paycheck that occurred BEFORE your tracking start date
         if payday_date < tracking_start:
             continue
             
@@ -198,7 +198,7 @@ def calculate_ytd_savings(income_history_df, pct_split_savings, today_date):
     accumulated_lifetime = 0.0
     accumulated_ytd = 0.0
     
-    # NEW: Fetch our customized tracking start date milestone
+    # Fetch our customized tracking start date milestone
     tracking_start = st.session_state.get('tracking_start_date', pd.Timestamp('2026-01-01').date())
     
     if income_history_df is not None and not income_history_df.empty:
@@ -221,7 +221,7 @@ def calculate_ytd_income(income_history_df, today_date):
     import streamlit as st
     ytd_earned = 0.0
     
-    # NEW: Fetch our customized tracking start date milestone to keep salary metrics aligned
+    # Fetch our customized tracking start date milestone to keep salary metrics aligned
     tracking_start = st.session_state.get('tracking_start_date', pd.Timestamp('2026-01-01').date())
     
     if income_history_df is not None and not income_history_df.empty:
