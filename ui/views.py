@@ -187,7 +187,7 @@ def render_budget_dashboard():
 def render_savings_dashboard():
     st.subheader("💰 Savings & Goals Dashboard")
     
-    sav_ctrl_col1, sav_ctrl_col2, sav_ctrl_spacer = st.columns([2.5, 2.0, 5.5])
+    sav_ctrl_col1, sav_ctrl_col2, sav_ctrl_col3, sav_ctrl_spacer = st.columns([2.5, 2.0, 2.2, 3.3])
     with sav_ctrl_col1:
         if st.button("🛠️ Edit Buckets & Goals", use_container_width=True, key="btn_buck_conf_v123"): 
             st.session_state.temp_bucket_config = {k: dict(v) for k, v in st.session_state.bucket_config.items()}
@@ -197,6 +197,10 @@ def render_savings_dashboard():
     with sav_ctrl_col2:
         if st.button("📜 View Savings History", use_container_width=True, key="btn_ledger_view_v123"): 
             st.session_state.show_sav_history_modal = True
+            st.rerun()
+    with sav_ctrl_col3:
+        if st.button("🏦 Edit Savings Account", use_container_width=True, key="btn_isolated_savings_acct_trigger"):
+            st.session_state.show_savings_account_modal = True
             st.rerun()
             
     st.markdown("---")
