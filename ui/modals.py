@@ -26,7 +26,11 @@ def render_unified_income_splits_modal():
             st.session_state.pay_frequency = chosen_freq
             st.toast("Pay dates generated up to today!", icon="📆")
 
-        st.markdown("---")
+       st.markdown("---")
+        # CHANGED: Pulls directly from config sync state, remaining pinned to what you save it to
+        staged_start_date = st.session_state.get("tracking_start_date") or date(2026, 1, 1)
+        chosen_start_date = st.date_input("Start Tracking Balance From (As-Of Date):", value=staged_start_date, format="YYYY-MM-DD", key="modal_tracking_start_date_direct_input")
+
         new_starting_savings = st.number_input("Starting Savings Balance ($):", value=float(st.session_state.get("starting_savings_balance", 0.0)), step=100.0, format="%.2f")
         
         st.markdown("---")
