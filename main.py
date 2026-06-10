@@ -18,7 +18,8 @@ from ui.modals import (
     render_category_modal, 
     render_ledger_modal, 
     render_combined_envelopes_modal, 
-    render_savings_history_modal
+    render_savings_history_modal,
+    render_savings_account_modal # Ensures the new dialog is imported cleanly
 )
 
 # --- APP CONFIGURATION ---
@@ -27,12 +28,10 @@ st.set_page_config(page_title="My Finance Dashboard V15.0", layout="wide")
 # --- INITIALIZE CORE ARCHITECTURE ---
 init_session_state()
 
-# --- FETCH GOOGLE DATA ---
-# UPDATED: We now check for a 'force_refresh' trigger.
-if 'google_data_loaded' not in st.session_state or st.session_state.get('force_refresh', False):
+# --- FETCH GOOGLE DATA (Only runs once per session) ---
+if 'google_data_loaded' not in st.session_state:
     load_data_from_google()
     st.session_state.google_data_loaded = True
-    st.session_state.force_refresh = False # Reset the trigger after a successful load
 
 apply_custom_theme()
 
@@ -60,6 +59,11 @@ if st.session_state.get('show_sav_buckets_modal', False):
 if st.session_state.get('show_sav_history_modal', False): 
     st.session_state.show_sav_history_modal = False
     render_savings_history_modal()
+
+# Active overlay execution block for your new savings profile window
+if st.session_state.get('show_savings_account_modal', False):
+    st.session_state.show_savings_account_modal = False
+    render_savings_account_modal()
 
 # --- DASHBOARD UI ---
 st.title("📊 My Finance Dashboard")
