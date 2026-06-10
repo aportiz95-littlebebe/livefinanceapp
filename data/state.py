@@ -23,6 +23,9 @@ def init_session_state():
     if 'pct_split_wants' not in st.session_state: st.session_state.pct_split_wants = 0.0
     if 'pct_split_savings' not in st.session_state: st.session_state.pct_split_savings = 0.0
     if 'starting_savings_balance' not in st.session_state: st.session_state.starting_savings_balance = 0.0
+    
+    # CHANGED: Defaulting to a fixed static milestone date instead of moving target date.today()
+    if 'tracking_start_date' not in st.session_state: st.session_state.tracking_start_date = date(2026, 1, 1)
 
     if 'bucket_config' not in st.session_state: st.session_state.bucket_config = {}
     if 'bucket_targets' not in st.session_state: st.session_state.bucket_targets = {"Unallocated Savings": 0.0}
