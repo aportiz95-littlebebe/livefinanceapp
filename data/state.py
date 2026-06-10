@@ -24,8 +24,9 @@ def init_session_state():
     if 'pct_split_savings' not in st.session_state: st.session_state.pct_split_savings = 0.0
     if 'starting_savings_balance' not in st.session_state: st.session_state.starting_savings_balance = 0.0
     
-    # CHANGED: Defaulting to a fixed static milestone date instead of moving target date.today()
+    # Core tracking variables
     if 'tracking_start_date' not in st.session_state: st.session_state.tracking_start_date = date(2026, 1, 1)
+    if 'base_pay' not in st.session_state: st.session_state.base_pay = 0.0
 
     if 'bucket_config' not in st.session_state: st.session_state.bucket_config = {}
     if 'bucket_targets' not in st.session_state: st.session_state.bucket_targets = {"Unallocated Savings": 0.0}
@@ -52,34 +53,24 @@ def load_data_from_google():
     try:
         sheet = get_google_sheet()
         
-        # 1. Load Expenses
         try:
             worksheet = sheet.worksheet("Expenses")
             records = worksheet.get_all_records()
-            if records: 
-                st.session_state.expenses = pd.DataFrame(records)
-        except gspread.exceptions.WorksheetNotFound:
-            pass
+            if records: st.session_state.expenses = pd.DataFrame(records)
+        except gspread.exceptions.WorksheetNotFound: pass
 
-        # 2. Load Income
         try:
             worksheet = sheet.worksheet("Income")
             records = worksheet.get_all_records()
-            if records: 
-                st.session_state.income_history = pd.DataFrame(records)
-        except gspread.exceptions.WorksheetNotFound:
-            pass
+            if records: st.session_state.income_history = pd.DataFrame(records)
+        except gspread.exceptions.WorksheetNotFound: pass
             
-        # 3. Load Savings
         try:
             worksheet = sheet.worksheet("Savings")
             records = worksheet.get_all_records()
-            if records: 
-                st.session_state.savings_ledger = pd.DataFrame(records)
-        except gspread.exceptions.WorksheetNotFound:
-            pass
+            if records: st.session_state.savings_ledger = pd.DataFrame(records)
+        except gspread.exceptions.WorksheetNotFound: pass
 
-        # 4. Load Config Settings
         try:
             worksheet = sheet.worksheet("Config")
             records = worksheet.get_all_records()
@@ -88,46 +79,36 @@ def load_data_from_google():
                 val = row.get("Value", None)
                 
                 if key and val != "":
-                    # Normalize string representations out of gspread
                     if isinstance(val, str):
-                        try:
-                            parsed_val = json.loads(val)
-                        except json.JSONDecodeError:
-                            parsed_val = val
+                        try: parsed_val = json.loads(val)
+                        except json.JSONDecodeError: parsed_val = val
                     else:
                         parsed_val = val
                     
-                    # Direct, bulletproof assignment and string-to-date conversion
-                    if key in ["first_payday", "next_payday"]:
+                    if key in ["first_payday", "next_payday", "tracking_start_date"]:
                         try:
                             if isinstance(parsed_val, str):
                                 clean_str = parsed_val.replace('"', '').strip()
                                 st.session_state[key] = datetime.strptime(clean_str, "%Y-%m-%d").date()
-                            elif isinstance(parsed_val, (int, float)):
-                                pass # Prevent numbers from poisoning date variables
-                        except Exception:
-                            pass # Preserve baseline fallback on formatting errors
+                        except Exception: pass
+                    elif key == "base_pay":
+                        st.session_state.base_pay = float(parsed_val)
                     else:
                         st.session_state[key] = parsed_val
                         
-        except gspread.exceptions.WorksheetNotFound:
-            pass
-            
+        except gspread.exceptions.WorksheetNotFound: pass
     except Exception as e:
         st.error(f"Fatal connection error: {e}")
 
 def push_df_to_google(sheet_name, df):
-    """Pushes a Pandas DataFrame to a specific Google Sheet tab."""
     try:
         sheet = get_google_sheet()
         try: worksheet = sheet.worksheet(sheet_name)
         except gspread.exceptions.WorksheetNotFound: worksheet = sheet.add_worksheet(title=sheet_name, rows="100", cols="20")
-        
         df_safe = df.copy().astype(str)
         worksheet.clear()
         worksheet.update([df_safe.columns.values.tolist()] + df_safe.values.tolist())
-    except Exception as e:
-        st.toast(f"Sync failed for {sheet_name}", icon="🚫")
+    except Exception as e: st.toast(f"Sync failed for {sheet_name}", icon="🚫")
 
 def push_config_to_google():
     """Serializes core configurations and saves them to the 'Config' tab."""
@@ -136,16 +117,9 @@ def push_config_to_google():
         try: worksheet = sheet.worksheet("Config")
         except gspread.exceptions.WorksheetNotFound: worksheet = sheet.add_worksheet(title="Config", rows="50", cols="2")
         
-        # Safely capture the raw string layout before pushing
-        if isinstance(st.session_state.first_payday, (date, datetime)):
-            f_payday_str = st.session_state.first_payday.strftime("%Y-%m-%d")
-        else:
-            f_payday_str = str(st.session_state.first_payday).replace('"', '').strip()
-
-        if isinstance(st.session_state.next_payday, (date, datetime)):
-            n_payday_str = st.session_state.next_payday.strftime("%Y-%m-%d")
-        else:
-            n_payday_str = str(st.session_state.next_payday).replace('"', '').strip()
+        f_payday_str = st.session_state.first_payday.strftime("%Y-%m-%d") if isinstance(st.session_state.first_payday, (date, datetime)) else str(st.session_state.first_payday)
+        n_payday_str = st.session_state.next_payday.strftime("%Y-%m-%d") if isinstance(st.session_state.next_payday, (date, datetime)) else str(st.session_state.next_payday)
+        t_start_str = st.session_state.tracking_start_date.strftime("%Y-%m-%d") if isinstance(st.session_state.tracking_start_date, (date, datetime)) else str(st.session_state.tracking_start_date)
 
         configs = [
             ["fixed_bills", json.dumps(st.session_state.fixed_bills)],
@@ -156,12 +130,12 @@ def push_config_to_google():
             ["pct_split_wants", json.dumps(st.session_state.pct_split_wants)],
             ["pct_split_savings", json.dumps(st.session_state.pct_split_savings)],
             ["starting_savings_balance", json.dumps(st.session_state.starting_savings_balance)],
+            ["tracking_start_date", json.dumps(t_start_str)],
+            ["base_pay", json.dumps(st.session_state.base_pay)], # PERSISTENT FIELD TRACKING
             ["first_payday", json.dumps(f_payday_str)],  
             ["next_payday", json.dumps(n_payday_str)],    
             ["pay_frequency", json.dumps(st.session_state.pay_frequency)] 
         ]
-        
         worksheet.clear()
         worksheet.update([["Key", "Value"]] + configs)
-    except Exception as e:
-        st.toast("Config Sync Failed", icon="🚫")
+    except Exception as e: st.toast("Config Sync Failed", icon="🚫")
