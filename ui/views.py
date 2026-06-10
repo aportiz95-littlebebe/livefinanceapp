@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import calendar
-from datetime import datetime
+from datetime import datetime, date
 from data.state import push_df_to_google
 from core.calculations import (
     get_period_dates, 
@@ -28,8 +28,7 @@ def render_budget_dashboard():
             st.session_state.temp_next_payday = st.session_state.next_payday
             st.session_state.temp_pay_frequency = st.session_state.pay_frequency
             st.session_state.temp_anchor_mode = st.session_state.anchor_mode
-            st.session_state.temp_first_payday = st.session_state.first_payday
-            st.session_state.temp_starting_savings_balance = st.session_state.starting_savings_balance
+            st.session_state.first_payday = st.session_state.get('first_payday', date(2026,1,1))
             st.session_state.show_unified_modal = True
             st.rerun()
     with ctrl_col2:
@@ -51,10 +50,12 @@ def render_budget_dashboard():
 
     today = datetime.now().date()
     interval_days = 7 if st.session_state.pay_frequency == "Weekly" else (30 if st.session_state.pay_frequency == "Monthly" else 14)
-    anchor_date = st.session_state.first_payday if st.session_state.anchor_mode in ["First Payday of the Year", "Manual Entry"] else st.session_state.next_payday
+    anchor_date = st.session_state.first_payday if st.session_state.get('first_payday') else today
 
     current_period_start, current_period_end, next_period_start, next_period_end = get_period_dates(anchor_date, interval_days, today)
-    current_income = get_income_for_date(st.session_state.income_history, today)
+    
+    # Budgets are structurally locked onto your configured steady Base Pay
+    current_income = st.session_state.get("base_pay", 0.0)
 
     metrics = compute_budget_metrics(
         current_income=current_income,
@@ -66,15 +67,15 @@ def render_budget_dashboard():
         current_end=current_period_end
     )
 
-    next_bills_total, next_formatted_bills_list = process_bills_for_period(st.session_state.fixed_bills, next_period_start, next_period_end)
+    next_bills_total, next_formatted_bullets_list = process_bills_for_period(st.session_state.fixed_bills, next_period_start, next_period_end)
 
     dash_top_left, dash_top_mid, dash_top_right = st.columns([1.5, 1.2, 1.2])
     with dash_top_left:
         st.markdown("### 💸 Budget Overview")
-        st.metric(label="Current Base Pay", value=f"${current_income:,.2f}")
+        st.metric(label="Current Base Pay Baseline", value=f"${current_income:,.2f}")
         
         ytd_earned = calculate_ytd_income(st.session_state.income_history, today)
-        st.metric(label="📈 Salary Earned YTD", value=f"${ytd_earned:,.2f}")
+        st.metric(label="📈 Total Salary Earned YTD", value=f"${ytd_earned:,.2f}")
             
         st.metric(label=f"Needs Budget ({st.session_state.pct_split_needs:,.0f}%)", value=f"${metrics['needs_target']:,.2f}")
         st.metric(label=f"Wants Budget ({st.session_state.pct_split_wants:,.0f}%)", value=f"${metrics['wants_target']:,.2f}")
@@ -93,46 +94,87 @@ def render_budget_dashboard():
     with dash_top_right:
         st.markdown("### 🔮 Bills Due Next Pay Period")
         st.caption(f"Pay Period: **{next_period_start.strftime('%b %d')}** to **{next_period_end.strftime('%b %d')}**")
-        if next_formatted_bills_list:
-            for bullet in next_formatted_bills_list: st.markdown(bullet)
+        if next_formatted_bullets_list:
+            for bullet in next_formatted_bullets_list: st.markdown(bullet)
             st.markdown(f"**Total Amount Due: ${next_bills_total:,.2f}**")
             
-            # --- LOOK-AHEAD WARNING LOGIC ---
-            next_income = get_income_for_date(st.session_state.income_history, next_period_start)
-            next_needs_target = next_income * (st.session_state.pct_split_needs / 100.0)
+            next_needs_target = current_income * (st.session_state.pct_split_needs / 100.0)
             next_needs_overage = next_bills_total - next_needs_target
             
             if next_needs_overage > 0:
                 st.error(f"⚠️ Heads up! These bills will exceed your {st.session_state.pct_split_needs:,.0f}% Needs budget by **${next_needs_overage:,.2f}**")
-            # ------------------------------------
-            
         else: st.success("No bills scheduled in the next block.")
 
     st.markdown("---")
     
     side_col_form, side_col_progress = st.columns([1.1, 0.9])
     with side_col_form:
-        st.subheader("📝 Log a Transaction")
-        category_options = list(st.session_state.custom_categories.keys())
-        log_col1, log_col2 = st.columns([1, 1])
-        with log_col1: exp_date = st.date_input("Transaction Date", value=today, key="main_log_date")
-        with log_col2: 
-            if category_options: selected_type = st.selectbox("Type", category_options, key="main_log_type")
-            else:
-                st.info("Add categories first")
-                selected_type = None
-                
-        exp_desc = st.text_input("Where / Description", placeholder="e.g., Kroger, Shell", key="main_log_desc")
-        exp_amt = st.number_input("Amount ($)", min_value=0.0, value=0.0, step=1.0, format="%.2f", key="main_log_amt")
-        if st.button("Add Transaction", use_container_width=True, key="main_log_submit_btn", disabled=not selected_type):
-            if exp_desc and exp_amt > 0 and selected_type:
-                assigned_bucket = st.session_state.custom_categories[selected_type]
-                final_amt = exp_amt if assigned_bucket != "Extra Income" else -exp_amt
-                new_row = pd.DataFrame([{"Date": exp_date.strftime("%Y-%m-%d"), "Description": exp_desc, "Category": assigned_bucket, "Sub-Category": selected_type, "Amount": final_amt}])
-                
-                st.session_state.expenses = pd.concat([st.session_state.expenses, new_row], ignore_index=True)
-                push_df_to_google("Expenses", st.session_state.expenses)
-                st.rerun()
+        st.subheader("📝 Log Paycheck or Transaction")
+        entry_mode = st.radio("What are you logging?", ["Expense / Transaction", "💰 Received Paycheck"], horizontal=True)
+        
+        if entry_mode == "💰 Received Paycheck":
+            pay_date = st.date_input("Pay Date", value=today, key="manual_inc_date")
+            pay_amt = st.number_input("Actual Net Paycheck Amount Received ($)", min_value=0.0, value=float(current_income), step=100.0, format="%.2f", key="manual_inc_amt")
+            
+            if st.button("🚀 Log Paycheck & Distribute Savings", use_container_width=True):
+                if pay_amt > 0:
+                    # 1. Write the absolute manual paycheck to the Income history ledger
+                    new_inc = pd.DataFrame([{"Effective Date": pay_date.strftime("%Y-%m-%d"), "Amount": pay_amt}])
+                    st.session_state.income_history = pd.concat([st.session_state.income_history, new_inc], ignore_index=True)
+                    push_df_to_google("Income", st.session_state.income_history)
+                    
+                    # 2. RUN BASE PAY ALLOCATIONS VS. GAS SURPLUS ROUTING
+                    base_pay_pool = current_income * (st.session_state.pct_split_savings / 100.0)
+                    new_ledger_rows = []
+                    
+                    # Distribute regular savings percentage based strictly on core base pay
+                    for b_name, b_data in st.session_state.bucket_config.items():
+                        b_pct = float(b_data.get("pct", 0.0))
+                        if (dep := base_pay_pool * (b_pct / 100.0)) > 0:
+                            new_ledger_rows.append({
+                                "Date": pay_date.strftime("%Y-%m-%d"),
+                                "Fund": b_name,
+                                "Type": "Payday Split",
+                                "Note": f"Standard Payday Split ({b_pct}%)",
+                                "Amount": dep
+                            })
+                    
+                    # CALCULATE NON-ITEMIZED SURPLUS (Gas Reimbursement, Bonus, etc.)
+                    reimbursement_surplus = pay_amt - current_income
+                    if reimbursement_surplus > 0:
+                        new_ledger_rows.append({
+                            "Date": pay_date.strftime("%Y-%m-%d"),
+                            "Fund": "Unallocated Savings",
+                            "Type": "Payday Split",
+                            "Note": f"Gas Reimbursement / Paycheck Surplus Margin",
+                            "Amount": reimbursement_surplus
+                        })
+                        
+                    if new_ledger_rows:
+                        st.session_state.savings_ledger = pd.concat([st.session_state.savings_ledger, pd.DataFrame(new_ledger_rows)], ignore_index=True)
+                        push_df_to_google("Savings", st.session_state.savings_ledger)
+                        
+                    st.toast("Paycheck processed! Core splits processed & surplus routed to Unallocated!", icon="💸")
+                    st.rerun()
+        else:
+            category_options = list(st.session_state.custom_categories.keys())
+            log_col1, log_col2 = st.columns([1, 1])
+            with log_col1: exp_date = st.date_input("Transaction Date", value=today, key="main_log_date")
+            with log_col2: 
+                if category_options: selected_type = st.selectbox("Type", category_options, key="main_log_type")
+                else: st.info("Add categories first"); selected_type = None
+                    
+            exp_desc = st.text_input("Where / Description", placeholder="e.g., Kroger, Shell", key="main_log_desc")
+            exp_amt = st.number_input("Amount ($)", min_value=0.0, value=0.0, step=1.0, format="%.2f", key="main_log_amt")
+            if st.button("Add Transaction", use_container_width=True, key="main_log_submit_btn", disabled=not selected_type):
+                if exp_desc and exp_amt > 0 and selected_type:
+                    assigned_bucket = st.session_state.custom_categories[selected_type]
+                    final_amt = exp_amt if assigned_bucket != "Extra Income" else -exp_amt
+                    new_row = pd.DataFrame([{"Date": exp_date.strftime("%Y-%m-%d"), "Description": exp_desc, "Category": assigned_bucket, "Sub-Category": selected_type, "Amount": final_amt}])
+                    
+                    st.session_state.expenses = pd.concat([st.session_state.expenses, new_row], ignore_index=True)
+                    push_df_to_google("Expenses", st.session_state.expenses)
+                    st.rerun()
                 
     with side_col_progress:
         st.subheader("📊 Budget Progress")
@@ -207,38 +249,34 @@ def render_savings_dashboard():
 
     today = datetime.now().date()
     interval_days = 7 if st.session_state.pay_frequency == "Weekly" else (30 if st.session_state.pay_frequency == "Monthly" else 14)
-    current_income = get_income_for_date(st.session_state.income_history, today)
-    savings_target = current_income * (st.session_state.pct_split_savings / 100.0)
+    base_income = st.session_state.get("base_pay", 0.0)
+    savings_target = base_income * (st.session_state.pct_split_savings / 100.0)
 
-    bucket_balances, allocated_total, unassigned_pct, unassigned_ledger = calculate_bucket_balances(st.session_state.bucket_config, st.session_state.savings_ledger)
-    accumulated_payday_savings, accumulated_payday_savings_ytd = calculate_ytd_savings(st.session_state.income_history, st.session_state.pct_split_savings, today)
+    bucket_balances, allocated_total, unassigned_pct, _ = calculate_bucket_balances(st.session_state.bucket_config, st.session_state.savings_ledger)
+    _, accumulated_payday_savings_ytd = calculate_ytd_savings(st.session_state.income_history, st.session_state.pct_split_savings, today)
 
     df_sav = st.session_state.savings_ledger.copy()
     
-    # Bounded filter: only query manual activity or ledger changes logged ON or AFTER your milestone date
     tracking_start = st.session_state.get('tracking_start_date', today)
     if not df_sav.empty:
         df_sav['Date'] = pd.to_datetime(df_sav['Date']).dt.date
-        active_manual_df = df_sav[(df_sav["Type"] != "Auto-Deposit") & (df_sav["Date"] >= tracking_start)]
+        active_manual_df = df_sav[(df_sav["Type"] != "Payday Split") & (df_sav["Date"] > tracking_start)]
         manual_deposits_total = active_manual_df["Amount"].sum()
-        total_background_auto = df_sav[(df_sav["Type"] == "Auto-Deposit") & (df_sav["Date"] >= tracking_start)]["Amount"].sum()
+        forward_payday_auto = df_sav[(df_sav["Type"] == "Payday Split") & (df_sav["Date"] > tracking_start)]["Amount"].sum()
     else:
         manual_deposits_total = 0.0
-        total_background_auto = 0.0
+        forward_payday_auto = 0.0
 
-    # UPDATED CONFIGURATION FOR GRAND TOTAL BALANCE
-    # This keeps your 22K isolated as your baseline, tracking future growth metrics seamlessly
-    net_total_savings = st.session_state.starting_savings_balance + total_background_auto + manual_deposits_total
-    
+    net_total_savings = st.session_state.starting_savings_balance + forward_payday_auto + manual_deposits_total
     unassigned_bal = net_total_savings - allocated_total
 
     workspace_col_left, workspace_col_right = st.columns([1.1, 1.4])
     
     with workspace_col_left:
         st.markdown("### 📊 Savings Overview")
-        st.metric(label="🏦 Grand Total Savings", value=f"${net_total_savings:,.2f}", delta=f"+${total_background_auto:,.2f} via Auto-Payday")
+        st.metric(label="🏦 Grand Total Savings", value=f"${net_total_savings:,.2f}", delta=f"+${forward_payday_auto:,.2f} via Payday Splits")
         st.write(" ") 
-        st.metric(label="📈 Savings Deposited YTD", value=f"${accumulated_payday_savings_ytd:,.2f}")
+        st.metric(label="📈 New Savings Logged YTD", value=f"${accumulated_payday_savings_ytd:,.2f}")
         
         st.markdown("---")
         st.markdown("### 📥 Log Savings Activity")
@@ -281,7 +319,8 @@ def render_savings_dashboard():
         st.markdown("Review current Bucket amounts.")
         st.write(" ")
         
-        all_tracking_buckets = list(st.session_state.bucket_targets.keys())
+        all_tracking_buckets = ["Unallocated Savings"] + list(st.session_state.bucket_targets.keys())
+        all_tracking_buckets = list(dict.fromkeys(all_tracking_buckets))
         
         for b_name in all_tracking_buckets:
             st.markdown(f"#### 💼 {b_name}")
