@@ -96,6 +96,16 @@ def render_budget_dashboard():
         if next_formatted_bills_list:
             for bullet in next_formatted_bills_list: st.markdown(bullet)
             st.markdown(f"**Total Amount Due: ${next_bills_total:,.2f}**")
+            
+            # --- NEW LOOK-AHEAD WARNING LOGIC ---
+            next_income = get_income_for_date(st.session_state.income_history, next_period_start)
+            next_needs_target = next_income * (st.session_state.pct_split_needs / 100.0)
+            next_needs_overage = next_bills_total - next_needs_target
+            
+            if next_needs_overage > 0:
+                st.warning(f"⚠️ Heads up! These bills will exceed your {st.session_state.pct_split_needs:,.0f}% Needs budget by **${next_needs_overage:,.2f}**")
+            # ------------------------------------
+            
         else: st.success("No bills scheduled in the next block.")
 
     st.markdown("---")
