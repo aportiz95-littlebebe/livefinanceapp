@@ -139,6 +139,10 @@ def push_config_to_google():
         try: worksheet = sheet.worksheet("Config")
         except gspread.exceptions.WorksheetNotFound: worksheet = sheet.add_worksheet(title="Config", rows="50", cols="2")
         
+        # Convert date objects to strings safely for JSON serialization
+        f_payday_str = st.session_state.first_payday.strftime("%Y-%m-%d") if isinstance(st.session_state.first_payday, date) else str(st.session_state.first_payday)
+        n_payday_str = st.session_state.next_payday.strftime("%Y-%m-%d") if isinstance(st.session_state.next_payday, date) else str(st.session_state.next_payday)
+
         configs = [
             ["fixed_bills", json.dumps(st.session_state.fixed_bills)],
             ["custom_categories", json.dumps(st.session_state.custom_categories)],
@@ -147,7 +151,10 @@ def push_config_to_google():
             ["pct_split_needs", json.dumps(st.session_state.pct_split_needs)],
             ["pct_split_wants", json.dumps(st.session_state.pct_split_wants)],
             ["pct_split_savings", json.dumps(st.session_state.pct_split_savings)],
-            ["starting_savings_balance", json.dumps(st.session_state.starting_savings_balance)]
+            ["starting_savings_balance", json.dumps(st.session_state.starting_savings_balance)],
+            ["first_payday", json.dumps(f_payday_str)],  # ADDED TO SYNC ENGINE
+            ["next_payday", json.dumps(n_payday_str)],    # ADDED TO SYNC ENGINE
+            ["pay_frequency", json.dumps(st.session_state.pay_frequency)] # ADDED TO SYNC ENGINE
         ]
         
         worksheet.clear()
