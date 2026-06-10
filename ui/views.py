@@ -97,7 +97,7 @@ def render_budget_dashboard():
             for bullet in next_formatted_bills_list: st.markdown(bullet)
             st.markdown(f"**Total Amount Due: ${next_bills_total:,.2f}**")
             
-            # --- NEW LOOK-AHEAD WARNING LOGIC ---
+            # --- LOOK-AHEAD WARNING LOGIC ---
             next_income = get_income_for_date(st.session_state.income_history, next_period_start)
             next_needs_target = next_income * (st.session_state.pct_split_needs / 100.0)
             next_needs_overage = next_bills_total - next_needs_target
@@ -210,11 +210,23 @@ def render_savings_dashboard():
     accumulated_payday_savings, accumulated_payday_savings_ytd = calculate_ytd_savings(st.session_state.income_history, st.session_state.pct_split_savings, today)
 
     df_sav = st.session_state.savings_ledger.copy()
-    manual_deposits_total = df_sav[df_sav["Type"] != "Auto-Deposit"]["Amount"].sum() if not df_sav.empty else 0.0
-    net_total_savings = st.session_state.starting_savings_balance + accumulated_payday_savings + manual_deposits_total
+    
+    # Bounded filter: only query manual activity or ledger changes logged ON or AFTER your milestone date
+    tracking_start = st.session_state.get('tracking_start_date', today)
+    if not df_sav.empty:
+        df_sav['Date'] = pd.to_datetime(df_sav['Date']).dt.date
+        active_manual_df = df_sav[(df_sav["Type"] != "Auto-Deposit") & (df_sav["Date"] >= tracking_start)]
+        manual_deposits_total = active_manual_df["Amount"].sum()
+        total_background_auto = df_sav[(df_sav["Type"] == "Auto-Deposit") & (df_sav["Date"] >= tracking_start)]["Amount"].sum()
+    else:
+        manual_deposits_total = 0.0
+        total_background_auto = 0.0
+
+    # UPDATED CONFIGURATION FOR GRAND TOTAL BALANCE
+    # This keeps your 22K isolated as your baseline, tracking future growth metrics seamlessly
+    net_total_savings = st.session_state.starting_savings_balance + total_background_auto + manual_deposits_total
     
     unassigned_bal = net_total_savings - allocated_total
-    total_background_auto = df_sav[df_sav["Type"] == "Auto-Deposit"]["Amount"].sum() if not df_sav.empty else 0.0
 
     workspace_col_left, workspace_col_right = st.columns([1.1, 1.4])
     
