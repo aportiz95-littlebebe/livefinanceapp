@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
-from core.calculations import generate_timeline_dates, calculate_historical_savings_splits
+from core.calculations import generate_timeline_dates
 from data.state import push_df_to_google, push_config_to_google
 
 @st.dialog("💰 Edit Income & Budgets", width="large")
