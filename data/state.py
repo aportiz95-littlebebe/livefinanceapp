@@ -42,7 +42,7 @@ def get_google_sheet():
     """Authenticates using Streamlit Secrets and connects to the sheet."""
     credentials = st.secrets["gcp_service_account"]
     gc = gspread.service_account_from_dict(credentials)
-    return gc.open("Envelope Savings Hub Database")
+    return gc.open("LiveFinanceApp")
 
 def load_data_from_google():
     """Pulls Data from Google Sheets with explicit error logging."""
