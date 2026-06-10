@@ -74,6 +74,7 @@ def render_unified_income_splits_modal():
             push_df_to_google("Income", st.session_state.income_history)
             push_df_to_google("Savings", st.session_state.savings_ledger)
             push_config_to_google()
+            st.session_state.force_refresh = True # ADDED REFRESH TRIGGER
             st.rerun()
     else:
         st.error("❌ Budget Allocation percentages must sum up to exactly 100%.")
@@ -130,6 +131,7 @@ def render_bills_modal():
         if st.button("🔄 Save Changes", use_container_width=True, disabled=is_any_bill_editing): 
             st.session_state.fixed_bills = [dict(bill) for bill in st.session_state.temp_fixed_bills]
             push_config_to_google()
+            st.session_state.force_refresh = True # ADDED REFRESH TRIGGER
             st.rerun()
 
 @st.dialog("🛠️ Edit Expenses & Types", width="large")
@@ -186,6 +188,7 @@ def render_category_modal():
             st.session_state.custom_categories = dict(st.session_state.temp_custom_categories)
             push_config_to_google()
             push_df_to_google("Expenses", st.session_state.expenses)
+            st.session_state.force_refresh = True # ADDED REFRESH TRIGGER
             st.rerun()
 
 @st.dialog("📜 View Transaction History", width="large")
@@ -304,6 +307,7 @@ def render_combined_envelopes_modal():
             st.session_state.bucket_targets = dict(st.session_state.temp_bucket_targets)
             push_config_to_google()
             push_df_to_google("Savings", st.session_state.savings_ledger)
+            st.session_state.force_refresh = True # ADDED REFRESH TRIGGER
             st.rerun()
 
 @st.dialog("📜 Historical Savings Ledger", width="large")
@@ -312,4 +316,5 @@ def render_savings_history_modal():
     st.session_state.savings_ledger = edited_sav_df
     if st.button("Save Changes", use_container_width=True): 
         push_df_to_google("Savings", st.session_state.savings_ledger)
+        st.session_state.force_refresh = True # ADDED REFRESH TRIGGER
         st.rerun()
