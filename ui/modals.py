@@ -27,13 +27,6 @@ def render_unified_income_splits_modal():
             st.toast("Pay dates generated up to today!", icon="📆")
 
         st.markdown("---")
-        # Manual, persistent tracking start date field
-        staged_start_date = st.session_state.get("tracking_start_date") or date(2026, 1, 1)
-        chosen_start_date = st.date_input("Start Tracking Balance From (As-Of Date):", value=staged_start_date, format="YYYY-MM-DD", key="modal_tracking_start_date_direct_input")
-
-        new_starting_savings = st.number_input("Starting Savings Balance ($):", value=float(st.session_state.get("starting_savings_balance", 0.0)), step=100.0, format="%.2f")
-        
-        st.markdown("---")
         st.markdown("### 📊 Budget Limits")
         val_needs = st.number_input("Needs %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_needs), key="val_needs_input")
         val_wants = st.number_input("Wants %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_wants), key="val_wants_input")
@@ -73,8 +66,6 @@ def render_unified_income_splits_modal():
             st.session_state.pct_split_needs = val_needs
             st.session_state.pct_split_wants = val_wants
             st.session_state.pct_split_savings = val_savings
-            st.session_state.starting_savings_balance = new_starting_savings
-            st.session_state.tracking_start_date = chosen_start_date
             
             push_df_to_google("Income", st.session_state.income_history)
             push_df_to_google("Savings", st.session_state.savings_ledger)
@@ -321,5 +312,26 @@ def render_savings_history_modal():
     st.session_state.savings_ledger = edited_sav_df
     if st.button("Save Changes", use_container_width=True): 
         push_df_to_google("Savings", st.session_state.savings_ledger)
+        st.session_state.force_refresh = True
+        st.rerun()
+
+# --- NEW独立MODAL: EDIT SAVINGS ACCOUNT ---
+@st.dialog("🏦 Edit Savings Account", width="medium")
+def render_savings_account_modal():
+    st.markdown("### ⚙️ Baseline Milestone Configuration")
+    st.caption("Establish your absolute starting benchmark point. All future paycheck splits calculate forward from this selected date.")
+    
+    staged_start_date = st.session_state.get("tracking_start_date") or date(2026, 1, 1)
+    chosen_start_date = st.date_input("Start Tracking Balance From (As-Of Date):", value=staged_start_date, format="YYYY-MM-DD", key="modal_isolated_tracking_start")
+
+    new_starting_savings = st.number_input("Starting Savings Balance ($):", value=float(st.session_state.get("starting_savings_balance", 0.0)), step=100.0, format="%.2f", key="modal_isolated_starting_balance")
+    
+    st.markdown("---")
+    if st.button("💾 Lock Baseline Balance", use_container_width=True, key="btn_save_isolated_savings_milestone"):
+        st.session_state.starting_savings_balance = new_starting_savings
+        st.session_state.tracking_start_date = chosen_start_date
+        
+        # Sync configurations directly to Google and reload
+        push_config_to_google()
         st.session_state.force_refresh = True
         st.rerun()
