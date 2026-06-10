@@ -4,71 +4,38 @@ from datetime import datetime, date
 from core.calculations import generate_timeline_dates
 from data.state import push_df_to_google, push_config_to_google
 
-@st.dialog("💰 Edit Income & Budgets", width="large")
+@st.dialog("💰 Edit Income & Budgets", width="small")
 def render_unified_income_splits_modal():
     if 'temp_pct_split_needs' not in st.session_state: st.session_state.temp_pct_split_needs = st.session_state.pct_split_needs
     if 'temp_pct_split_wants' not in st.session_state: st.session_state.temp_pct_split_wants = st.session_state.pct_split_wants
     if 'temp_pct_split_savings' not in st.session_state: st.session_state.temp_pct_split_savings = st.session_state.pct_split_savings
 
-    col_inputs, col_ledger = st.columns([1.0, 1.2])
+    st.markdown("#### ⚙️ Baseline Parameters")
+    staged_first_payday = st.session_state.get("first_payday") or date(2026, 1, 1)
+        
+    chosen_first_payday = st.date_input("First Payday of the Year:", value=staged_first_payday, format="YYYY-MM-DD", key="modal_first_payday_direct_input")
+    frequency_opts = ["Weekly", "Bi-weekly", "Monthly"]
+    chosen_freq = st.selectbox("Pay Frequency:", frequency_opts, index=frequency_opts.index(st.session_state.get("pay_frequency", "Bi-weekly")))
     
-    with col_inputs:
-        st.markdown("#### ⚙️ Generate Pay Dates")
-        staged_first_payday = st.session_state.get("first_payday") or date(2026, 1, 1)
-            
-        chosen_first_payday = st.date_input("First Payday of the Year:", value=staged_first_payday, format="YYYY-MM-DD", key="modal_first_payday_direct_input")
-        frequency_opts = ["Weekly", "Bi-weekly", "Monthly"]
-        chosen_freq = st.selectbox("Pay Frequency:", frequency_opts, index=frequency_opts.index(st.session_state.get("pay_frequency", "Bi-weekly")))
-        
-        if st.button("🗓️ Generate Pay Dates", use_container_width=True):
-            st.session_state.temp_income_history = generate_timeline_dates(chosen_first_payday, chosen_freq, st.session_state.income_history)
-            st.session_state.first_payday = chosen_first_payday
-            st.session_state.pay_frequency = chosen_freq
-            st.toast("Pay dates generated up to today!", icon="📆")
+    # RE-INTRODUCED FIXED BASE PAY FIELD
+    val_base_pay = st.number_input("Current Base Pay ($):", min_value=0.0, value=float(st.session_state.get("base_pay", 0.0)), step=100.0, format="%.2f")
 
-        st.markdown("---")
-        st.markdown("### 📊 Budget Limits")
-        val_needs = st.number_input("Needs %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_needs), key="val_needs_input")
-        val_wants = st.number_input("Wants %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_wants), key="val_wants_input")
-        val_savings = st.number_input("Savings %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_savings), key="val_savings_input")
-
-    with col_ledger:
-        st.markdown("<h4 style='margin-top:0; padding-top:0;'>📝 Paycheck Amounts History</h4>", unsafe_allow_html=True)
-        st.caption("Double-click any cell in **Net Amount ($)** to log what you were paid on that day.")
-        
-        display_df = st.session_state.temp_income_history.copy() if 'temp_income_history' in st.session_state else pd.DataFrame(columns=["Effective Date", "Amount"])
-        if not display_df.empty:
-            display_df['Effective Date'] = pd.to_datetime(display_df['Effective Date']).dt.date
-            display_df = display_df.sort_values('Effective Date').reset_index(drop=True)
-
-        edited_inc_df = st.data_editor(
-            display_df, use_container_width=True, num_rows="fixed", key="income_auto_dates_grid_editor",
-            column_config={
-                "Effective Date": st.column_config.DateColumn("Pay Date", disabled=True),
-                "Amount": st.column_config.NumberColumn("Net Amount ($)", min_value=0.0, format="$%.2f", required=True)
-            }
-        )
-        
-        if st.button("Save Changes", use_container_width=True, key="btn_stage_ledger_v1"):
-            st.session_state.temp_income_history = edited_inc_df.dropna(subset=['Effective Date', 'Amount'])
-            st.toast("Amounts saved successfully!", icon="💾")
+    st.markdown("---")
+    st.markdown("### 📊 Budget Limits")
+    val_needs = st.number_input("Needs %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_needs), key="val_needs_input")
+    val_wants = st.number_input("Wants %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_wants), key="val_wants_input")
+    val_savings = st.number_input("Savings %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_savings), key="val_savings_input")
 
     st.markdown("---")
     if (val_needs + val_wants + val_savings == 100.0) or (val_needs == 0 and val_wants == 0 and val_savings == 0):
         if st.button("💾 Save Changes", use_container_width=True, key="btn_final_save_v1"):
-            final_df = edited_inc_df.dropna(subset=['Effective Date', 'Amount']).copy()
-            if not final_df.empty:
-                final_df['Effective Date'] = pd.to_datetime(final_df['Effective Date']).dt.date
-                final_df = final_df.sort_values('Effective Date').reset_index(drop=True)
-            
-            st.session_state.savings_ledger = calculate_historical_savings_splits(final_df, val_savings, st.session_state.bucket_config, st.session_state.savings_ledger)
-            st.session_state.income_history = final_df
+            st.session_state.first_payday = chosen_first_payday
+            st.session_state.pay_frequency = chosen_freq
+            st.session_state.base_pay = val_base_pay
             st.session_state.pct_split_needs = val_needs
             st.session_state.pct_split_wants = val_wants
             st.session_state.pct_split_savings = val_savings
             
-            push_df_to_google("Income", st.session_state.income_history)
-            push_df_to_google("Savings", st.session_state.savings_ledger)
             push_config_to_google()
             st.session_state.force_refresh = True
             st.rerun()
@@ -193,7 +160,7 @@ def render_ledger_modal():
 
 @st.dialog("🛠️ Edit Buckets & Goals", width="large")
 def render_combined_envelopes_modal():
-    st.markdown("### 🗂️ Configure Buckets & Goals")
+    st.markdown("### 🎯 Configure Buckets & Goals")
     def toggle_edit_buck(idx, state): st.session_state[f"edit_buck_{idx}"] = state
     def save_buck(idx):
         old_name = list(st.session_state.temp_bucket_config.keys())[idx]
@@ -315,7 +282,6 @@ def render_savings_history_modal():
         st.session_state.force_refresh = True
         st.rerun()
 
-# --- NEW独立MODAL: EDIT SAVINGS ACCOUNT ---
 @st.dialog("🏦 Edit Savings Account", width="medium")
 def render_savings_account_modal():
     st.markdown("### ⚙️ Baseline Milestone Configuration")
@@ -330,8 +296,6 @@ def render_savings_account_modal():
     if st.button("💾 Lock Baseline Balance", use_container_width=True, key="btn_save_isolated_savings_milestone"):
         st.session_state.starting_savings_balance = new_starting_savings
         st.session_state.tracking_start_date = chosen_start_date
-        
-        # Sync configurations directly to Google and reload
         push_config_to_google()
         st.session_state.force_refresh = True
         st.rerun()
