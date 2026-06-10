@@ -93,12 +93,22 @@ def load_data_from_google():
                     else:
                         parsed_val = val
                     
-                    # --- NEW: Convert date strings back into proper date objects ---
-                    if key in ["first_payday", "next_payday"] and isinstance(parsed_val, str):
-                        try:
-                            # Converts "YYYY-MM-DD" text into an actual date object
-                            st.session_state[key] = datetime.strptime(parsed_val, "%Y-%m-%d").date()
-                        except ValueError:
+                    # Convert date strings back into proper date objects safely
+                    if key in ["first_payday", "next_payday"]:
+                        if isinstance(parsed_val, str):
+                            try:
+                                # Strip any extra quotes or spacing if JSON stringified it weirdly
+                                clean_str = parsed_val.replace('"', '').strip()
+                                st.session_state[key] = datetime.strptime(clean_str, "%Y-%m-%d").date()
+                            except ValueError:
+                                # Fallback if formatting doesn't match perfectly
+                                try:
+                                    st.session_state[key] = datetime.fromisoformat(clean_str).date()
+                                except ValueError:
+                                    st.session_state[key] = parsed_val
+                        elif isinstance(parsed_val, (int, float)):
+                            pass # Keep default if it read as a number erroneously
+                        else:
                             st.session_state[key] = parsed_val
                     else:
                         st.session_state[key] = parsed_val
