@@ -45,40 +45,23 @@ def get_google_sheet():
     return gc.open("Envelope Savings Hub Database")
 
 def load_data_from_google():
-    """Pulls DataFrames and Configs from Google Sheets on boot with error handling."""
+    """Pulls Data from Google Sheets with explicit error logging."""
     try:
         sheet = get_google_sheet()
+        st.write(f"Successfully opened sheet: {sheet.title}") # DEBUG: Will show on your app
         
-        # 1. Load DataFrames
-        for tab_name, state_key in [("Income", "income_history"), ("Expenses", "expenses"), ("Savings", "savings_ledger")]:
-            try:
-                worksheet = sheet.worksheet(tab_name)
-                records = worksheet.get_all_records()
-                
-                # Only update if we actually got data back
-                if records: 
-                    st.session_state[state_key] = pd.DataFrame(records)
-                else:
-                    # If the sheet is empty, keep the default empty dataframe
-                    st.toast(f"Tab '{tab_name}' is empty, using defaults.", icon="ℹ️")
-                    
-            except gspread.exceptions.WorksheetNotFound:
-                st.toast(f"Tab '{tab_name}' not found, skipping.", icon="⚠️")
-                
-        # 2. Load Config Dictionaries
+        # Test just the Expenses tab first
         try:
-            config_records = sheet.worksheet("Config").get_all_records()
-            for row in config_records:
-                key = row.get("Key")
-                val = row.get("Value")
-                if key and val:
-                    st.session_state[key] = json.loads(val)
-        except gspread.exceptions.WorksheetNotFound:
-            st.toast("Config tab not found, using defaults.", icon="⚠️")
+            worksheet = sheet.worksheet("Expenses")
+            records = worksheet.get_all_records()
+            st.write(f"Expenses tab rows found: {len(records)}") # DEBUG: Will show on your app
+            if records: 
+                st.session_state.expenses = pd.DataFrame(records)
+        except Exception as e:
+            st.error(f"Error reading Expenses: {e}")
             
     except Exception as e:
-        st.toast(f"Could not connect: {e}", icon="🚫")
-
+        st.error(f"Fatal connection error: {e}")
 def push_df_to_google(sheet_name, df):
     """Pushes a Pandas DataFrame to a specific Google Sheet tab."""
     try:
