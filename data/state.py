@@ -45,23 +45,56 @@ def get_google_sheet():
     return gc.open("LiveFinanceApp")
 
 def load_data_from_google():
-    """Pulls Data from Google Sheets with explicit error logging."""
+    """Pulls Data from Google Sheets and loads it into session state."""
     try:
         sheet = get_google_sheet()
-        st.write(f"Successfully opened sheet: {sheet.title}") # DEBUG: Will show on your app
         
-        # Test just the Expenses tab first
+        # 1. Load Expenses
         try:
             worksheet = sheet.worksheet("Expenses")
             records = worksheet.get_all_records()
-            st.write(f"Expenses tab rows found: {len(records)}") # DEBUG: Will show on your app
             if records: 
                 st.session_state.expenses = pd.DataFrame(records)
-        except Exception as e:
-            st.error(f"Error reading Expenses: {e}")
+        except gspread.exceptions.WorksheetNotFound:
+            pass
+
+        # 2. Load Income
+        try:
+            worksheet = sheet.worksheet("Income")
+            records = worksheet.get_all_records()
+            if records: 
+                st.session_state.income_history = pd.DataFrame(records)
+        except gspread.exceptions.WorksheetNotFound:
+            pass
+            
+        # 3. Load Savings
+        try:
+            worksheet = sheet.worksheet("Savings")
+            records = worksheet.get_all_records()
+            if records: 
+                st.session_state.savings_ledger = pd.DataFrame(records)
+        except gspread.exceptions.WorksheetNotFound:
+            pass
+
+        # 4. Load Config Settings
+        try:
+            worksheet = sheet.worksheet("Config")
+            records = worksheet.get_all_records()
+            for row in records:
+                key = row.get("Key")
+                val = row.get("Value")
+                if key and val:
+                    try:
+                        # Convert the JSON string back into a Python list/dict/float
+                        st.session_state[key] = json.loads(val)
+                    except json.JSONDecodeError:
+                        pass
+        except gspread.exceptions.WorksheetNotFound:
+            pass
             
     except Exception as e:
         st.error(f"Fatal connection error: {e}")
+
 def push_df_to_google(sheet_name, df):
     """Pushes a Pandas DataFrame to a specific Google Sheet tab."""
     try:
