@@ -73,7 +73,7 @@ def process_bills_for_period(fixed_bills, start_date, end_date):
                 if current_check.day == bill.get("Due Day", 1):
                     amt = bill["Amount"]
                     total_amount += amt
-                    formatted_bullets.append(f"* **{bill['Name']}:** ${amt:,.2f} on the {get_ordinal_suffix(bill['Due Day'])}")
+                    formatted_bullets.append(f驼* **{bill['Name']}:** ${amt:,.2f} on the {get_ordinal_suffix(bill['Due Day'])}")
                     break
                 current_check += timedelta(days=1)
                 
@@ -159,14 +159,22 @@ def generate_timeline_dates(first_payday, frequency, existing_income_df=None):
     return template_df.sort_values('Effective Date').reset_index(drop=True)
 
 def calculate_historical_savings_splits(income_df, savings_percentage, bucket_config, current_savings_ledger):
-    """Flushes out old auto-deposits and calculates new historical distributions."""
+    """Flushes out old auto-deposits and calculates new historical distributions bounded by start date."""
+    import streamlit as st
     updated_ledger = current_savings_ledger[current_savings_ledger["Type"] != "Auto-Deposit"].copy()
+    
+    # NEW: Fetch our customized tracking start date milestone
+    tracking_start = st.session_state.get('tracking_start_date', pd.Timestamp('2026-01-01').date())
     
     new_sav_rows = []
     for _, row in income_df.iterrows():
         payday_date = row['Effective Date']
         payday_amount = float(row['Amount'])
         
+        # NEW LOOK-AHEAD FILTER: Skip processing any paycheck that occurred BEFORE your tracking start date
+        if payday_date < tracking_start:
+            continue
+            
         sav_pool = payday_amount * (savings_percentage / 100.0)
         
         for b_name, b_data in bucket_config.items():
@@ -185,31 +193,41 @@ def calculate_historical_savings_splits(income_df, savings_percentage, bucket_co
     return updated_ledger
 
 def calculate_ytd_savings(income_history_df, pct_split_savings, today_date):
-    """Calculates total lifetime and current year YTD savings accumulations."""
+    """Calculates total baseline savings accumulations strictly starting from tracking start date."""
+    import streamlit as st
     accumulated_lifetime = 0.0
     accumulated_ytd = 0.0
+    
+    # NEW: Fetch our customized tracking start date milestone
+    tracking_start = st.session_state.get('tracking_start_date', pd.Timestamp('2026-01-01').date())
     
     if income_history_df is not None and not income_history_df.empty:
         df_inc = income_history_df.copy()
         df_inc['Effective Date'] = pd.to_datetime(df_inc['Effective Date']).dt.date
         
-        historical_paychecks = df_inc[df_inc['Effective Date'] <= today_date]
+        # Only evaluate checks that landed ON or AFTER your active tracking date milestone
+        historical_paychecks = df_inc[(df_inc['Effective Date'] <= today_date) & (df_inc['Effective Date'] >= tracking_start)]
         for _, row in historical_paychecks.iterrows():
             accumulated_lifetime += float(row['Amount']) * (pct_split_savings / 100.0)
             
-        ytd_paychecks = df_inc[(df_inc['Effective Date'] <= today_date) & (df_inc['Effective Date'].apply(lambda x: x.year == today_date.year))]
+        ytd_paychecks = df_inc[(df_inc['Effective Date'] <= today_date) & (df_inc['Effective Date'] >= tracking_start) & (df_inc['Effective Date'].apply(lambda x: x.year == today_date.year))]
         for _, row in ytd_paychecks.iterrows():
             accumulated_ytd += float(row['Amount']) * (pct_split_savings / 100.0)
             
     return accumulated_lifetime, accumulated_ytd
 
 def calculate_ytd_income(income_history_df, today_date):
-    """Extracts UI logic to calculate Total YTD base income safely."""
+    """Extracts UI logic to calculate Total YTD base income safely starting from tracking start date."""
+    import streamlit as st
     ytd_earned = 0.0
+    
+    # NEW: Fetch our customized tracking start date milestone to keep salary metrics aligned
+    tracking_start = st.session_state.get('tracking_start_date', pd.Timestamp('2026-01-01').date())
+    
     if income_history_df is not None and not income_history_df.empty:
         df_ytd = income_history_df.copy()
         df_ytd['Effective Date'] = pd.to_datetime(df_ytd['Effective Date']).dt.date
-        df_ytd = df_ytd[(df_ytd['Effective Date'] <= today_date) & (df_ytd['Effective Date'].apply(lambda x: x.year == today_date.year))]
+        df_ytd = df_ytd[(df_ytd['Effective Date'] <= today_date) & (df_ytd['Effective Date'] >= tracking_start) & (df_ytd['Effective Date'].apply(lambda x: x.year == today_date.year))]
         ytd_earned = df_ytd['Amount'].sum()
     return ytd_earned
 
