@@ -27,10 +27,12 @@ st.set_page_config(page_title="My Finance Dashboard V15.0", layout="wide")
 # --- INITIALIZE CORE ARCHITECTURE ---
 init_session_state()
 
-# --- FETCH GOOGLE DATA (Only runs once per session) ---
-if 'google_data_loaded' not in st.session_state:
+# --- FETCH GOOGLE DATA ---
+# UPDATED: We now check for a 'force_refresh' trigger.
+if 'google_data_loaded' not in st.session_state or st.session_state.get('force_refresh', False):
     load_data_from_google()
     st.session_state.google_data_loaded = True
+    st.session_state.force_refresh = False # Reset the trigger after a successful load
 
 apply_custom_theme()
 
