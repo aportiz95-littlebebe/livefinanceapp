@@ -82,20 +82,26 @@ def load_data_from_google():
             records = worksheet.get_all_records()
             for row in records:
                 key = row.get("Key")
-                val = row.get("Value", None) # Safely get the value
+                val = row.get("Value", None)
                 
-                # Check that key exists and value isn't an empty string (allows 0 and 0.0)
                 if key and val != "":
                     if isinstance(val, str):
                         try:
-                            # If it's a string (like lists/dicts), parse the JSON
-                            st.session_state[key] = json.loads(val)
+                            parsed_val = json.loads(val)
                         except json.JSONDecodeError:
-                            # Fallback if it's just a normal string
-                            st.session_state[key] = val
+                            parsed_val = val
                     else:
-                        # If gspread already converted it to a float/int, just assign it directly
-                        st.session_state[key] = val
+                        parsed_val = val
+                    
+                    # --- NEW: Convert date strings back into proper date objects ---
+                    if key in ["first_payday", "next_payday"] and isinstance(parsed_val, str):
+                        try:
+                            # Converts "YYYY-MM-DD" text into an actual date object
+                            st.session_state[key] = datetime.strptime(parsed_val, "%Y-%m-%d").date()
+                        except ValueError:
+                            st.session_state[key] = parsed_val
+                    else:
+                        st.session_state[key] = parsed_val
                         
         except gspread.exceptions.WorksheetNotFound:
             pass
