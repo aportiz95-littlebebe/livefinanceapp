@@ -19,24 +19,19 @@ def get_period_dates(anchor_date, interval_days, today=None):
     return current_start, current_end, next_start, next_end
 
 def get_income_for_date(income_df, target_date):
-    """Retrieves the correct base pay for a specific date."""
+    """Retrieves the exact amount of the latest logged paycheck prior to or on target_date."""
     if income_df.empty: return 0.00
     
     df = income_df.copy()
-    df['Effective Date'] = pandas_to_date(df['Effective Date'])
+    df['Effective Date'] = pd.to_datetime(df['Effective Date']).dt.date
     past_entries = df[df['Effective Date'] <= target_date]
     
     if past_entries.empty:
-        df_sorted = df.sort_values(by='Effective Date', ascending=True)
-        return float(df_sorted.iloc[0]['Amount']) if not df_sorted.empty else 0.00
+        return 0.00
     
+    # Sort descending to grab the absolute latest paycheck entered
     past_entries_sorted = past_entries.sort_values(by='Effective Date', ascending=False)
     return float(past_entries_sorted.iloc[0]['Amount'])
-
-def pandas_to_date(column):
-    """Helper to ensure dates are consistent."""
-    import pandas as pd
-    return pd.to_datetime(column).dt.date
 
 def get_ordinal_suffix(day):
     """Returns the ordinal suffix (st, nd, rd, th) for a given day integer."""
@@ -44,7 +39,7 @@ def get_ordinal_suffix(day):
     return f"{day}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th') }"
 
 def project_payday_cadence(first_payday, pay_frequency, target_year):
-    """Projects all recurring payday dates for a target year."""
+    """Projects recurring milestone paydays for the visual calendar layout."""
     projected_dates = set()
     if first_payday is None:
         return projected_dates
@@ -108,7 +103,6 @@ def compute_budget_metrics(current_income, pct_needs, pct_wants, expenses_df, fi
         
     needs_remaining = needs_target - total_needs_burden
     
-    # Pre-calculate progress bar ratios safely
     effective_wants_target = wants_target - max(0.0, needs_overage)
     wants_ratio = min(max(wants_spent / effective_wants_target, 0.0), 1.0) if effective_wants_target > 0 else 0.0
     needs_ratio = min(max(total_needs_burden / needs_target, 0.0), 1.0) if needs_target > 0 else 0.0
@@ -129,144 +123,78 @@ def compute_budget_metrics(current_income, pct_needs, pct_wants, expenses_df, fi
     }
 
 def generate_timeline_dates(first_payday, frequency, existing_income_df=None):
-    """Generates a sequence of pay dates from the first payday until today."""
-    if first_payday is None:
-        return pd.DataFrame(columns=["Effective Date", "Amount"])
-
-    interval_days = 7 if frequency == "Weekly" else (30 if frequency == "Monthly" else 14)
-    
-    generated_dates = []
-    current_calc_date = first_payday
-    today_date = datetime.now().date()
-    
-    while current_calc_date <= today_date:
-        generated_dates.append(current_calc_date)
-        if frequency == "Monthly":
-            current_calc_date += timedelta(days=30)
-        else:
-            current_calc_date += timedelta(days=interval_days)
-            
-    template_df = pd.DataFrame({"Effective Date": generated_dates, "Amount": 0.0})
-    
-    if existing_income_df is not None and not existing_income_df.empty:
-        existing_df = existing_income_df.copy()
-        existing_df['Effective Date'] = pd.to_datetime(existing_df['Effective Date']).dt.date
-        
-        merged_df = pd.merge(template_df, existing_df, on="Effective Date", how="left", suffixes=("_gen", "_old"))
-        merged_df["Amount"] = merged_df["Amount_old"].fillna(merged_df["Amount_gen"])
-        return merged_df[["Effective Date", "Amount"]].sort_values('Effective Date').reset_index(drop=True)
-        
-    return template_df.sort_values('Effective Date').reset_index(drop=True)
-
-def calculate_historical_savings_splits(income_df, savings_percentage, bucket_config, current_savings_ledger):
-    """Flushes out old auto-deposits and calculates new historical distributions bounded by start date."""
-    import streamlit as st
-    updated_ledger = current_savings_ledger[current_savings_ledger["Type"] != "Auto-Deposit"].copy()
-    
-    # Fetch our customized tracking start date milestone
-    tracking_start = st.session_state.get('tracking_start_date', pd.Timestamp('2026-01-01').date())
-    
-    new_sav_rows = []
-    for _, row in income_df.iterrows():
-        payday_date = row['Effective Date']
-        payday_amount = float(row['Amount'])
-        
-        # Skip processing any paycheck that occurred BEFORE your tracking start date
-        if payday_date < tracking_start:
-            continue
-            
-        sav_pool = payday_amount * (savings_percentage / 100.0)
-        
-        for b_name, b_data in bucket_config.items():
-            b_pct = float(b_data.get("pct", 0.0))
-            if (dep := sav_pool * (b_pct / 100.0)) > 0:
-                new_sav_rows.append({
-                    "Date": payday_date, 
-                    "Fund": b_name, 
-                    "Type": "Auto-Deposit", 
-                    "Note": f"Payday Allocation (Split from {payday_date.strftime('%b %d')})", 
-                    "Amount": dep
-                })
-                
-    if new_sav_rows:
-        return pd.concat([updated_ledger, pd.DataFrame(new_sav_rows)], ignore_index=True)
-    return updated_ledger
+    """Simply passes back your clean manual ledger dataframe instead of generating blank filler values."""
+    if existing_income_df is not None:
+        return existing_income_df.copy()
+    return pd.DataFrame(columns=["Effective Date", "Amount"])
 
 def calculate_ytd_savings(income_history_df, pct_split_savings, today_date):
-    """Calculates total baseline savings accumulations strictly starting from tracking start date."""
+    """Calculates savings strictly by summing actual manually recorded paycheck parameters."""
     import streamlit as st
-    accumulated_lifetime = 0.0
     accumulated_ytd = 0.0
-    
-    # Fetch our customized tracking start date milestone
-    tracking_start = st.session_state.get('tracking_start_date', pd.Timestamp('2026-01-01').date())
+    tracking_start = st.session_state.get('tracking_start_date', datetime.now().date())
     
     if income_history_df is not None and not income_history_df.empty:
         df_inc = income_history_df.copy()
         df_inc['Effective Date'] = pd.to_datetime(df_inc['Effective Date']).dt.date
         
-        # Only evaluate checks that landed ON or AFTER your active tracking date milestone
-        historical_paychecks = df_inc[(df_inc['Effective Date'] <= today_date) & (df_inc['Effective Date'] >= tracking_start)]
-        for _, row in historical_paychecks.iterrows():
-            accumulated_lifetime += float(row['Amount']) * (pct_split_savings / 100.0)
-            
-        ytd_paychecks = df_inc[(df_inc['Effective Date'] <= today_date) & (df_inc['Effective Date'] >= tracking_start) & (df_inc['Effective Date'].apply(lambda x: x.year == today_date.year))]
+        # Pull only rows you manually added after your blank slate date
+        ytd_paychecks = df_inc[(df_inc['Effective Date'] <= today_date) & (df_inc['Effective Date'] >= tracking_start)]
         for _, row in ytd_paychecks.iterrows():
             accumulated_ytd += float(row['Amount']) * (pct_split_savings / 100.0)
             
-    return accumulated_lifetime, accumulated_ytd
+    return accumulated_ytd, accumulated_ytd
 
 def calculate_ytd_income(income_history_df, today_date):
-    """Extracts UI logic to calculate Total YTD base income safely starting from tracking start date."""
+    """Sums real paycheck rows you manually typed into the system."""
     import streamlit as st
     ytd_earned = 0.0
-    
-    # Fetch our customized tracking start date milestone to keep salary metrics aligned
-    tracking_start = st.session_state.get('tracking_start_date', pd.Timestamp('2026-01-01').date())
+    tracking_start = st.session_state.get('tracking_start_date', datetime.now().date())
     
     if income_history_df is not None and not income_history_df.empty:
         df_ytd = income_history_df.copy()
         df_ytd['Effective Date'] = pd.to_datetime(df_ytd['Effective Date']).dt.date
-        df_ytd = df_ytd[(df_ytd['Effective Date'] <= today_date) & (df_ytd['Effective Date'] >= tracking_start) & (df_ytd['Effective Date'].apply(lambda x: x.year == today_date.year))]
+        df_ytd = df_ytd[(df_ytd['Effective Date'] <= today_date) & (df_ytd['Effective Date'] >= tracking_start)]
         ytd_earned = df_ytd['Amount'].sum()
     return ytd_earned
 
 def calculate_bucket_balances(bucket_config, savings_ledger_df):
-    """Compiles sums for individual buckets, decoupling pure math from the visual layout loop."""
+    """Sums up your manual baseline bucket values plus any explicit manual transaction items."""
+    import streamlit as st
     bucket_balances = {}
     allocated_total = 0.0
     total_assigned_pct = 0.0
     
     df_sav = savings_ledger_df.copy() if savings_ledger_df is not None else pd.DataFrame()
+    tracking_start = st.session_state.get('tracking_start_date', datetime.now().date())
     
+    if not df_sav.empty:
+        df_sav['Date'] = pd.to_datetime(df_sav['Date']).dt.date
+
     for b_name, b_data in bucket_config.items():
         b_init = float(b_data.get("initial", 0.0))
         b_pct = float(b_data.get("pct", 0.0))
         total_assigned_pct += b_pct
         
-        b_ledger = df_sav[df_sav["Fund"] == b_name]["Amount"].sum() if not df_sav.empty else 0.0
+        # Captures items explicitly generated during manual paycheck entry or extra logging
+        if not df_sav.empty:
+            b_ledger = df_sav[(df_sav["Fund"] == b_name) & (df_sav["Date"] >= tracking_start)]["Amount"].sum()
+        else:
+            b_ledger = 0.0
+            
         b_bal = b_init + b_ledger
         bucket_balances[b_name] = b_bal
         allocated_total += b_bal
         
     unassigned_pct = max(0.0, 100.0 - total_assigned_pct)
-    unassigned_ledger = df_sav[df_sav["Fund"] == "Unallocated Savings"]["Amount"].sum() if not df_sav.empty else 0.0
-    
-    return bucket_balances, allocated_total, unassigned_pct, unassigned_ledger
+    return bucket_balances, allocated_total, unassigned_pct, 0.0
 
 def calculate_goal_timeline(remaining, biweekly_flow, next_payday_date, interval_days, today):
-    """Calculates forecasting metrics for timeline displays based on flow rate."""
-    if biweekly_flow <= 0 or remaining <= 0:
-        return None, None
-        
+    if biweekly_flow <= 0 or remaining <= 0: return None, None
     paychecks_req = int(-(-remaining // biweekly_flow))
-    
     if next_payday_date and today > next_payday_date:
         days_diff = (today - next_payday_date).days
-        intervals_needed = (days_diff // interval_days) + 1
-        next_payday_date = next_payday_date + timedelta(days=intervals_needed * interval_days)
-
+        next_payday_date = next_payday_date + timedelta(days=((days_diff // interval_days) + 1) * interval_days)
     if next_payday_date:
-        accomplish_date = next_payday_date + timedelta(days=(paychecks_req - 1) * interval_days)
-        return paychecks_req, accomplish_date
+        return paychecks_req, next_payday_date + timedelta(days=(paychecks_req - 1) * interval_days)
     return None, None
