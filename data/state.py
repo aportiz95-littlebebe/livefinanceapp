@@ -85,6 +85,7 @@ def load_data_from_google():
                 val = row.get("Value", None)
                 
                 if key and val != "":
+                    # Normalize string representations out of gspread
                     if isinstance(val, str):
                         try:
                             parsed_val = json.loads(val)
@@ -93,23 +94,16 @@ def load_data_from_google():
                     else:
                         parsed_val = val
                     
-                    # Convert date strings back into proper date objects safely
+                    # Direct, bulletproof assignment and string-to-date conversion
                     if key in ["first_payday", "next_payday"]:
-                        if isinstance(parsed_val, str):
-                            try:
-                                # Strip any extra quotes or spacing if JSON stringified it weirdly
+                        try:
+                            if isinstance(parsed_val, str):
                                 clean_str = parsed_val.replace('"', '').strip()
                                 st.session_state[key] = datetime.strptime(clean_str, "%Y-%m-%d").date()
-                            except ValueError:
-                                # Fallback if formatting doesn't match perfectly
-                                try:
-                                    st.session_state[key] = datetime.fromisoformat(clean_str).date()
-                                except ValueError:
-                                    st.session_state[key] = parsed_val
-                        elif isinstance(parsed_val, (int, float)):
-                            pass # Keep default if it read as a number erroneously
-                        else:
-                            st.session_state[key] = parsed_val
+                            elif isinstance(parsed_val, (int, float)):
+                                pass # Prevent numbers from poisoning date variables
+                        except Exception:
+                            pass # Preserve baseline fallback on formatting errors
                     else:
                         st.session_state[key] = parsed_val
                         
@@ -139,9 +133,16 @@ def push_config_to_google():
         try: worksheet = sheet.worksheet("Config")
         except gspread.exceptions.WorksheetNotFound: worksheet = sheet.add_worksheet(title="Config", rows="50", cols="2")
         
-        # Convert date objects to strings safely for JSON serialization
-        f_payday_str = st.session_state.first_payday.strftime("%Y-%m-%d") if isinstance(st.session_state.first_payday, date) else str(st.session_state.first_payday)
-        n_payday_str = st.session_state.next_payday.strftime("%Y-%m-%d") if isinstance(st.session_state.next_payday, date) else str(st.session_state.next_payday)
+        # Safely capture the raw string layout before pushing
+        if isinstance(st.session_state.first_payday, (date, datetime)):
+            f_payday_str = st.session_state.first_payday.strftime("%Y-%m-%d")
+        else:
+            f_payday_str = str(st.session_state.first_payday).replace('"', '').strip()
+
+        if isinstance(st.session_state.next_payday, (date, datetime)):
+            n_payday_str = st.session_state.next_payday.strftime("%Y-%m-%d")
+        else:
+            n_payday_str = str(st.session_state.next_payday).replace('"', '').strip()
 
         configs = [
             ["fixed_bills", json.dumps(st.session_state.fixed_bills)],
@@ -152,9 +153,9 @@ def push_config_to_google():
             ["pct_split_wants", json.dumps(st.session_state.pct_split_wants)],
             ["pct_split_savings", json.dumps(st.session_state.pct_split_savings)],
             ["starting_savings_balance", json.dumps(st.session_state.starting_savings_balance)],
-            ["first_payday", json.dumps(f_payday_str)],  # ADDED TO SYNC ENGINE
-            ["next_payday", json.dumps(n_payday_str)],    # ADDED TO SYNC ENGINE
-            ["pay_frequency", json.dumps(st.session_state.pay_frequency)] # ADDED TO SYNC ENGINE
+            ["first_payday", json.dumps(f_payday_str)],  
+            ["next_payday", json.dumps(n_payday_str)],    
+            ["pay_frequency", json.dumps(st.session_state.pay_frequency)] 
         ]
         
         worksheet.clear()
