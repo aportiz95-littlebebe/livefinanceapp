@@ -178,16 +178,24 @@ def render_budget_dashboard():
                 
     with side_col_progress:
         st.subheader("📊 Budget Progress")
-        st.write(f"**Wants Budget:** Spent ${metrics['wants_spent']:,.2f} of ${metrics['effective_wants_target']:,.2f}")
+        
+        # Wants Progress Section
+        st.markdown(f"<div style='font-size: 18px; margin-bottom: 6px;'><b>Wants Budget:</b> Spent ${metrics['wants_spent']:,.2f} of ${metrics['effective_wants_target']:,.2f}</div>", unsafe_allow_html=True)
         st.progress(metrics['wants_ratio'])
-        st.write(f"👉 *Wants Remaining:* **${metrics['wants_remaining']:,.2f}**")
-        if metrics['needs_overage'] > 0: st.caption(f"⚠️ *Fun money shrunk by **${metrics['needs_overage']:,.2f}** to patch Needs overages.*")
+        st.markdown(f"<div style='font-size: 18px; margin-top: 4px;'>👉 <i>Wants Remaining:</i> <b>${metrics['wants_remaining']:,.2f}</b></div>", unsafe_allow_html=True)
+        
+        if metrics['needs_overage'] > 0: 
+            st.caption(f"⚠️ *Fun money shrunk by **${metrics['needs_overage']:,.2f}** to patch Needs overages.*")
+            
         st.write("---")
-        st.write(f"**Needs Budget:** Spent ${metrics['total_needs_burden']:,.2f} of ${metrics['needs_target']:,.2f}")
+        
+        # Needs Progress Section
+        st.markdown(f"<div style='font-size: 18px; margin-bottom: 6px;'><b>Needs Budget:</b> Spent ${metrics['total_needs_burden']:,.2f} of ${metrics['needs_target']:,.2f}</div>", unsafe_allow_html=True)
         st.progress(metrics['needs_ratio'])
-        st.write(f"👉 *Needs Remaining:* **${metrics['needs_remaining']:,.2f}**")
+        st.markdown(f"<div style='font-size: 18px; margin-top: 4px;'>👉 <i>Needs Remaining:</i> <b>${metrics['needs_remaining']:,.2f}</b></div>", unsafe_allow_html=True)
+        
         if metrics['needs_remaining'] > 0:
-            st.success(f"💡 End-of-period sweep potential: **${metrics['needs_remaining']:,.2f}** to savings!")
+            st.success(f"💡 End-of-period sweep potential: **${metrics['needs_remaining']:,.2f}** to savings!") to savings!")
 
     st.markdown("---")
     st.markdown("---")
