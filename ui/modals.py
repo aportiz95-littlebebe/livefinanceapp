@@ -156,7 +156,25 @@ def render_category_modal():
 
 @st.dialog("📜 View Transaction History", width="large")
 def render_ledger_modal():
-    st.dataframe(st.session_state.expenses, use_container_width=True)
+    # 1. Swap dataframe for data_editor and allow dynamic row additions/deletions
+    edited_expenses_df = st.data_editor(
+        st.session_state.expenses, 
+        use_container_width=True, 
+        num_rows="dynamic", 
+        key="expenses_ledger_grid"
+    )
+    
+    # 2. Add a save button to lock in the edits
+    if st.button("Save Changes", use_container_width=True): 
+        # Update the live session state
+        st.session_state.expenses = edited_expenses_df
+        
+        # 3. Push the newly edited dataframe to your Google Sheet
+        push_df_to_google("Expenses", st.session_state.expenses)
+        
+        # Force a refresh to update the dashboard metrics
+        st.session_state.force_refresh = True
+        st.rerun()
 
 @st.dialog("🛠️ Edit Buckets & Goals", width="large")
 def render_combined_envelopes_modal():
