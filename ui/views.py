@@ -190,18 +190,53 @@ def render_budget_dashboard():
             st.success(f"💡 End-of-period sweep potential: **${metrics['needs_remaining']:,.2f}** to savings!")
 
     st.markdown("---")
-    st.subheader("📅 Monthly Bill Calendar")
-    year, month = today.year, today.month
+    st.markdown("---")
+    st.subheader("📅 Monthly Bill & Spend Calendar")
+    
+    # 1. Add interactive selectors to view the entire logging history
+    cal_col1, cal_col2, _ = st.columns([1, 1, 4])
+    with cal_col1:
+        sel_month = st.selectbox("Month", range(1, 13), index=today.month - 1, format_func=lambda x: calendar.month_name[x], key="cal_month_sel")
+    with cal_col2:
+        start_year = st.session_state.get('tracking_start_date', today).year
+        # Allow viewing from the tracking start year up to next year
+        sel_year = st.selectbox("Year", range(start_year, today.year + 2), index=today.year - start_year, key="cal_year_sel")
+        
+    year, month = sel_year, sel_month
     
     cal = calendar.Calendar(firstweekday=6)
     month_days = cal.monthdayscalendar(year, month)
     
+    # 2. Map Fixed Bills
     bill_map = {}
     for bill in st.session_state.fixed_bills:
         if bill["Amount"] > 0: bill_map.setdefault(bill["Due Day"], []).append(f"{bill['Name']} (${bill['Amount']:,.2f})")
 
+    # 3. Aggregate daily expenses split by Needs and Wants
+    needs_map, wants_map = {}, {}
+    if not st.session_state.expenses.empty:
+        df_exp = st.session_state.expenses.copy()
+        df_exp['Date'] = pd.to_datetime(df_exp['Date']).dt.date
+        
+        # Filter strictly for the selected calendar month, independent of pay periods
+        month_expenses = df_exp[
+            (df_exp['Date'].apply(lambda d: d.year == year and d.month == month)) &
+            (df_exp['Amount'] > 0)
+        ]
+        
+        for _, row in month_expenses.iterrows():
+            day = row['Date'].day
+            cat = row.get('Category', '')
+            amt = float(row['Amount'])
+            
+            if cat == "Needs":
+                needs_map[day] = needs_map.get(day, 0.0) + amt
+            elif cat == "Wants":
+                wants_map[day] = wants_map.get(day, 0.0) + amt
+
     projected_paydays = project_payday_cadence(st.session_state.first_payday, st.session_state.pay_frequency, year)
 
+    # 4. Build the Calendar HTML (Styled to match your custom UI hex theme)
     html_cal = f'<table style="width:100%; border-collapse:collapse; font-family:sans-serif; table-layout:fixed;"><tr>'
     for day_name in ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]: html_cal += f'<th style="background-color:rgba(0,0,0,0.05); padding:10px; border:1px solid rgba(0,0,0,0.1);">{day_name}</th>'
     html_cal += '</tr>'
@@ -211,16 +246,27 @@ def render_budget_dashboard():
         for day in week:
             if day == 0: html_cal += '<td style="background-color:rgba(0,0,0,0.02); border:1px solid rgba(0,0,0,0.1); height:115px;"></td>'
             else:
-                is_today = "background-color:rgba(124,179,66,0.2); border:2px solid #7cb342;" if (day == today.day and month == today.month) else "background-color:rgba(255,255,255,0.4); border:1px solid rgba(0,0,0,0.1);"
+                is_today = "background-color:rgba(149,155,117,0.2); border:2px solid #959B75;" if (day == today.day and month == today.month and year == today.year) else "background-color:rgba(255,255,255,0.4); border:1px solid rgba(0,0,0,0.1);"
                 html_cal += f'<td style="{is_today} height:115px; vertical-align:top; padding:0px;">'
                 
                 current_cal_date = datetime(year, month, day).date()
                 if st.session_state.first_payday is not None and current_cal_date in projected_paydays: 
-                    html_cal += '<span style="background-color:#2e7d32; color:white; font-size:11px; font-weight:bold; padding:3px 8px; display:block;">💰 Payday!</span>'
+                    html_cal += '<span style="background-color:#959B75; color:white; font-size:11px; font-weight:bold; padding:3px 8px; display:block;">💰 Payday!</span>'
                 
-                html_cal += f'<div style="padding:8px;"><span style="font-weight:bold; font-size:14px; color:#555;">{day}</span>'
+                html_cal += f'<div style="padding:8px;"><span style="font-weight:bold; font-size:14px; color:#3A3A3A;">{day}</span>'
+                
+                # Render Fixed Bills (Red alert theme)
                 if day in bill_map:
-                    for tag in bill_map[day]: html_cal += f'<span style="background-color:#ffeef0; color:#b71c1c; font-size:11px; padding:3px 6px; margin:2px 0; border-radius:4px; display:block; border-left:3px solid #e53935;">{tag}</span>'
+                    for tag in bill_map[day]: html_cal += f'<span style="background-color:#ffeef0; color:#8B3131; font-size:11px; padding:3px 6px; margin:2px 0; border-radius:4px; display:block; border-left:3px solid #8B3131;">{tag}</span>'
+                
+                # Render Needs (Sage Green Theme)
+                if day in needs_map and needs_map[day] > 0:
+                    html_cal += f'<span style="background-color:#E8EAE0; color:#4A4F36; font-size:11px; font-weight:bold; padding:3px 6px; margin:2px 0; border-radius:4px; display:block; border-left:3px solid #959B75;">🛡️ Needs: ${needs_map[day]:,.2f}</span>'
+
+                # Render Wants (Beige/Tan Theme)
+                if day in wants_map and wants_map[day] > 0:
+                    html_cal += f'<span style="background-color:#F8ECDE; color:#6D5D4B; font-size:11px; font-weight:bold; padding:3px 6px; margin:2px 0; border-radius:4px; display:block; border-left:3px solid #E0CEBA;">🎉 Wants: ${wants_map[day]:,.2f}</span>'
+
                 html_cal += '</div></td>'
         html_cal += "</tr>"
     st.markdown(html_cal + "</table>", unsafe_allow_html=True)
