@@ -127,17 +127,48 @@ def render_budget_dashboard():
                     base_pay_pool = current_income * (st.session_state.pct_split_savings / 100.0)
                     new_ledger_rows = []
                     
+                    # Calculate current balances so we know if a bucket is already full
+                    current_balances, _, _, _ = calculate_bucket_balances(st.session_state.bucket_config, st.session_state.savings_ledger)
+                    total_spillover = 0.0
+                    
                     # Distribute regular savings percentage based strictly on core base pay
                     for b_name, b_data in st.session_state.bucket_config.items():
                         b_pct = float(b_data.get("pct", 0.0))
+                        b_overflow = bool(b_data.get("overflow", False))
+                        b_target = st.session_state.bucket_targets.get(b_name, 0.0)
+                        
                         if (dep := base_pay_pool * (b_pct / 100.0)) > 0:
-                            new_ledger_rows.append({
-                                "Date": pay_date.strftime("%Y-%m-%d"),
-                                "Fund": b_name,
-                                "Type": "Payday Split",
-                                "Note": f"Standard Payday Split ({b_pct}%)",
-                                "Amount": dep
-                            })
+                            actual_dep = dep
+                            
+                            # Trigger Spillover logic if the setting is checked and a target exists
+                            if b_overflow and b_target > 0:
+                                current_bal = current_balances.get(b_name, 0.0)
+                                room_left = max(0.0, b_target - current_bal)
+                                
+                                # If the incoming deposit is larger than the room left, split it
+                                if dep > room_left:
+                                    actual_dep = room_left
+                                    total_spillover += (dep - room_left)
+                            
+                            # Log the allowed portion to the specific bucket
+                            if actual_dep > 0:
+                                new_ledger_rows.append({
+                                    "Date": pay_date.strftime("%Y-%m-%d"),
+                                    "Fund": b_name,
+                                    "Type": "Payday Split",
+                                    "Note": f"Standard Payday Split ({b_pct}%)",
+                                    "Amount": actual_dep
+                                })
+                    
+                    # Route any caught bucket spillover to Unallocated Savings
+                    if total_spillover > 0:
+                        new_ledger_rows.append({
+                            "Date": pay_date.strftime("%Y-%m-%d"),
+                            "Fund": "Unallocated Savings",
+                            "Type": "Payday Split",
+                            "Note": "Bucket Goal Spillover / Redistributed Excess",
+                            "Amount": total_spillover
+                        })
                     
                     # CALCULATE NON-ITEMIZED SURPLUS (Gas Reimbursement, Bonus, etc.)
                     reimbursement_surplus = pay_amt - current_income
@@ -154,7 +185,7 @@ def render_budget_dashboard():
                         st.session_state.savings_ledger = pd.concat([st.session_state.savings_ledger, pd.DataFrame(new_ledger_rows)], ignore_index=True)
                         push_df_to_google("Savings", st.session_state.savings_ledger)
                         
-                    st.toast("Paycheck processed! Core splits processed & surplus routed to Unallocated!", icon="💸")
+                    st.toast("Paycheck processed! Core splits & spillovers routed safely!", icon="💸")
                     st.rerun()
         else:
             category_options = list(st.session_state.custom_categories.keys())
