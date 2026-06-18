@@ -366,34 +366,67 @@ def render_savings_dashboard():
         st.markdown("---")
         st.markdown("### 📥 Log Savings Activity")
         
+        fund_opts = ["Unallocated Savings"] + list(st.session_state.bucket_config.keys())
+        
         def process_sav_transaction():
-            sav_amt = st.session_state["sav_amt_v124"]
+            sav_amt = st.session_state.get("sav_amt_v124", 0.0)
             if sav_amt > 0:
                 t_type = st.session_state["sav_type_v124"]
-                final_amt = -sav_amt if t_type == "Withdrawal" else sav_amt
                 
-                new_row = pd.DataFrame([{
-                    "Date": st.session_state["sav_date_input_v124"].strftime("%Y-%m-%d"),
-                    "Fund": st.session_state["savings_dropdown_v124"],
-                    "Type": t_type,
-                    "Note": st.session_state["sav_note_v124"],
-                    "Amount": final_amt
-                }])
-                st.session_state.savings_ledger = pd.concat([st.session_state.savings_ledger, new_row], ignore_index=True)
+                # --- NEW BUCKET TRANSFER LOGIC ---
+                if t_type == "Bucket Transfer":
+                    from_fund = st.session_state.get("transfer_from_v124")
+                    to_fund = st.session_state.get("transfer_to_v124")
+                    memo = st.session_state.get("sav_note_v124", "")
+                    
+                    if from_fund and to_fund and from_fund != to_fund:
+                        row_out = {
+                            "Date": st.session_state["sav_date_input_v124"].strftime("%Y-%m-%d"),
+                            "Fund": from_fund,
+                            "Type": "Transfer Out",
+                            "Note": f"To {to_fund}" + (f" ({memo})" if memo else ""),
+                            "Amount": -sav_amt
+                        }
+                        row_in = {
+                            "Date": st.session_state["sav_date_input_v124"].strftime("%Y-%m-%d"),
+                            "Fund": to_fund,
+                            "Type": "Transfer In",
+                            "Note": f"From {from_fund}" + (f" ({memo})" if memo else ""),
+                            "Amount": sav_amt
+                        }
+                        new_rows = pd.DataFrame([row_out, row_in])
+                        st.session_state.savings_ledger = pd.concat([st.session_state.savings_ledger, new_rows], ignore_index=True)
+                
+                # --- STANDARD DEPOSIT/WITHDRAWAL LOGIC ---
+                else:
+                    final_amt = -sav_amt if t_type == "Withdrawal" else sav_amt
+                    new_row = pd.DataFrame([{
+                        "Date": st.session_state["sav_date_input_v124"].strftime("%Y-%m-%d"),
+                        "Fund": st.session_state.get("savings_dropdown_v124", "Unallocated Savings"),
+                        "Type": t_type,
+                        "Note": st.session_state.get("sav_note_v124", ""),
+                        "Amount": final_amt
+                    }])
+                    st.session_state.savings_ledger = pd.concat([st.session_state.savings_ledger, new_row], ignore_index=True)
+                
                 push_df_to_google("Savings", st.session_state.savings_ledger)
                 
-                st.session_state["savings_dropdown_v124"] = "Unallocated Savings"
-                st.session_state["sav_type_v124"] = "Extra Deposit"
+                # Reset fields after a successful log
                 st.session_state["sav_note_v124"] = ""
                 st.session_state["sav_amt_v124"] = 0.0
 
-        sav_input_col1, sav_input_col2 = st.columns(2)
-        with sav_input_col1: st.date_input(label="Date", value=today, key="sav_date_input_v124")
-        with sav_input_col2: 
-            fund_opts = ["Unallocated Savings"] + list(st.session_state.bucket_config.keys())
-            st.selectbox(label="Target Bucket", options=fund_opts, key="savings_dropdown_v124")
+        # --- DYNAMIC UI LAYOUT ---
+        st.selectbox(label="Transaction Type", options=["Extra Deposit", "Withdrawal", "Bucket Transfer"], key="sav_type_v124")
+        st.date_input(label="Date", value=today, key="sav_date_input_v124")
         
-        st.selectbox(label="Transaction Type", options=["Extra Deposit", "Withdrawal"], key="sav_type_v124")
+        # Swap between one dropdown or two depending on the action selected
+        if st.session_state.get("sav_type_v124", "Extra Deposit") == "Bucket Transfer":
+            t_col1, t_col2 = st.columns(2)
+            with t_col1: st.selectbox("Transfer From", options=fund_opts, key="transfer_from_v124")
+            with t_col2: st.selectbox("Transfer To", options=fund_opts, index=1 if len(fund_opts) > 1 else 0, key="transfer_to_v124")
+        else:
+            st.selectbox(label="Target Bucket", options=fund_opts, key="savings_dropdown_v124")
+            
         st.text_input(label="Memo / Note", value="", key="sav_note_v124")
         st.number_input(label="Amount ($)", min_value=0.0, value=0.0, step=50.0, format="%.2f", key="sav_amt_v124")
             
