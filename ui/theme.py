@@ -60,7 +60,7 @@ def apply_custom_theme():
             }
             div.stButton > button p {
                 color: #FFFFFF !important; 
-                font-size: 13px !important;
+                font-size: 16px !important;
                 font-weight: 700 !important; 
                 font-family: sans-serif !important;
                 letter-spacing: 0.4px !important; 
