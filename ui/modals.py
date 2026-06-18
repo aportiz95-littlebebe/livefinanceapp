@@ -176,15 +176,12 @@ def render_ledger_modal():
 @st.dialog("🛠️ Edit Buckets & Goals", width="large")
 def render_combined_envelopes_modal():
     st.markdown("### 🎯 Configure Buckets & Goals")
-    
     def toggle_edit_buck(idx, state): st.session_state[f"edit_buck_{idx}"] = state
     def save_buck(idx):
         old_name = list(st.session_state.temp_bucket_config.keys())[idx]
         new_name = st.session_state[f"eb_name_{idx}"]
-        new_init = float(st.session_state[f"eb_init_{idx}"])
-        new_pct = float(st.session_state[f"eb_pct_{idx}"])
-        new_tgt = float(st.session_state[f"eb_tgt_{idx}"])
-        new_over = st.session_state[f"eb_over_{idx}"] # New overflow toggle
+        new_init, new_pct, new_tgt = float(st.session_state[f"eb_init_{idx}"]), float(st.session_state[f"eb_pct_{idx}"]), float(st.session_state[f"eb_tgt_{idx}"])
+        new_over = st.session_state.get(f"eb_over_{idx}", False)
         
         if new_name != old_name and new_name.strip():
             if not st.session_state.savings_ledger.empty:
@@ -208,14 +205,14 @@ def render_combined_envelopes_modal():
         is_editing = st.session_state.get(f"edit_buck_{idx}", False)
         show_label = "visible" if idx == 0 else "collapsed"
         
-        # Adjusted column widths to fit the new checkbox
         c1, c2, c3, c4, c5, c6, c7 = st.columns([1.6, 1.1, 1.1, 1.3, 0.7, 0.4, 0.4], vertical_alignment="bottom")
-        
         with c1: st.text_input("Savings Bucket", value=b_name, key=f"eb_name_{idx}", disabled=not is_editing, label_visibility=show_label)
         with c2: st.number_input("Balance ($)", min_value=0.0, value=float(b_data.get("initial", 0.0)), step=100.0, format="%.2f", key=f"eb_init_{idx}", disabled=not is_editing, label_visibility=show_label)
         with c3: st.number_input("Deposit (%)", min_value=0.0, max_value=100.0, value=float(b_data.get("pct", 0.0)), step=5.0, format="%.1f", key=f"eb_pct_{idx}", disabled=not is_editing, label_visibility=show_label)
-        with c4: st.number_input("Goal Target ($)", min_value=0.0, value=float(st.session_state.temp_bucket_targets.get(b_name, 0.0)), step=100.0, format="%.2f", key=f"eb_tgt_{idx}", disabled=not is_editing, label_visibility=show_label)
-        with c5: st.checkbox("Spillover", value=bool(b_data.get("overflow", False)), key=f"eb_over_{idx}", disabled=not is_editing, label_visibility=show_label)
+        with c4: st.number_input("Target ($)", min_value=0.0, value=float(st.session_state.temp_bucket_targets.get(b_name, 0.0)), step=100.0, format="%.2f", key=f"eb_tgt_{idx}", disabled=not is_editing, label_visibility=show_label)
+        with c5: 
+            if idx == 0 and not show_label == "collapsed": st.markdown("<div style='margin-bottom: 5px; font-size: 14px;'>Spillover</div>", unsafe_allow_html=True)
+            st.checkbox("Auto", value=bool(b_data.get("overflow", False)), key=f"eb_over_{idx}", disabled=not is_editing, label_visibility="collapsed")
         with c6:
             if is_editing: st.button("✅", key=f"save_b_{idx}", on_click=save_buck, args=(idx,), use_container_width=True)
             else: st.button("📝", key=f"edit_b_{idx}", on_click=toggle_edit_buck, args=(idx, True), use_container_width=True)
@@ -225,14 +222,14 @@ def render_combined_envelopes_modal():
             
     st.markdown("---")
     st.markdown("### ✨ Create a Savings Bucket")
-    nc1, nc2, nc3, nc4, nc5 = st.columns([1.6, 1.1, 1.1, 1.3, 1.5])
+    nc1, nc2, nc3, nc4, nc5 = st.columns([1.6, 1.1, 1.1, 1.3, 0.7])
     with nc1: st.text_input("New Bucket Name", key="new_b_name")
     with nc2: st.number_input("Balance ($)", min_value=0.0, step=100.0, format="%.2f", key="new_b_init")
     with nc3: st.number_input("Deposit (%)", min_value=0.0, max_value=100.0, step=5.0, format="%.1f", key="new_b_pct")
     with nc4: st.number_input("Target ($)", min_value=0.0, step=500.0, format="%.2f", key="new_b_tgt")
     with nc5:
-        st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
-        st.checkbox("Auto-Spillover to Unallocated", key="new_b_over")
+        st.markdown("<div style='margin-bottom: 5px; font-size: 14px;'>Spillover</div>", unsafe_allow_html=True)
+        st.checkbox("Auto", key="new_b_over", label_visibility="collapsed")
     
     def add_bucket():
         n, i = st.session_state.get("new_b_name", "").strip(), st.session_state.get("new_b_init", 0.0)
@@ -247,8 +244,6 @@ def render_combined_envelopes_modal():
     is_any_bucket_editing = any(st.session_state.get(f"edit_buck_{i}", False) for i in range(len(st.session_state.temp_bucket_config)))
     add_btn_col, _ = st.columns([2.5, 5.5])
     with add_btn_col: st.button("Add New Bucket", use_container_width=True, on_click=add_bucket, disabled=is_any_bucket_editing)
-
-    # ... [Keep your existing code for Custom Goals and the Save Button below this line] ...
 
     custom_unbacked_goals = [k for k in st.session_state.temp_bucket_targets.keys() if k not in ["Unallocated Savings"] and k not in st.session_state.temp_bucket_config]
     if custom_unbacked_goals:
