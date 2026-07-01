@@ -69,10 +69,20 @@ if st.session_state.get('show_savings_account_modal', False):
 st.title("📊 My Finance Dashboard")
 st.markdown("---")
 
-tab_dashboard, tab_savings = st.tabs(["📊 Budget Dashboard", "💰 Savings & Goals Dashboard"])
+# ADDED THIRD OPTION TO TABS LIST HERE
+tab_dashboard, tab_savings, tab_projections = st.tabs([
+    "📊 Budget Dashboard", 
+    "💰 Savings & Goals Dashboard", 
+    "🔮 Savings Projections"
+])
 
 with tab_dashboard:
     render_budget_dashboard()
 
 with tab_savings:
     render_savings_dashboard()
+
+# NEW TAB EXECUTION BLOCK
+with tab_projections:
+    from ui.views import render_projection_dashboard
+    render_projection_dashboard()
