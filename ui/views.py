@@ -484,3 +484,115 @@ def render_savings_dashboard():
                 st.progress(prog_ratio)
                 
             st.markdown("---")
+def render_projection_dashboard():
+    st.subheader("🔮 End-of-Year Savings Projection")
+    st.caption("Simulate your financial future by forecasting your savings balance up to December 31st.")
+    
+    today = datetime.now().date()
+    eoy_date = date(today.year, 12, 31)
+    days_left = (eoy_date - today).days
+    
+    if days_left <= 0:
+        st.warning("You are already at or past the end of the current year! Projections will calculate for next year's end.")
+        eoy_date = date(today.year + 1, 12, 31)
+        days_left = (eoy_date - today).days
+
+    # --- 1. GATHER DYNAMIC BASELINES ---
+    interval_days = 7 if st.session_state.pay_frequency == "Weekly" else (30 if st.session_state.pay_frequency == "Monthly" else 14)
+    base_income = st.session_state.get("base_pay", 0.0)
+    savings_per_paycheck = base_income * (st.session_state.pct_split_savings / 100.0)
+    
+    # Calculate current live total savings balance using your existing math structure
+    bucket_balances, allocated_total, _, _ = calculate_bucket_balances(st.session_state.bucket_config, st.session_state.savings_ledger)
+    df_sav = st.session_state.savings_ledger.copy() if st.session_state.savings_ledger is not None else pd.DataFrame()
+    tracking_start = st.session_state.get('tracking_start_date', today)
+    
+    if not df_sav.empty:
+        df_sav['Date'] = pd.to_datetime(df_sav['Date']).dt.date
+        manual_deposits_total = df_sav[(df_sav["Type"] != "Payday Split") & (df_sav["Date"] > tracking_start)]["Amount"].sum()
+        forward_payday_auto = df_sav[(df_sav["Type"] == "Payday Split") & (df_sav["Date"] > tracking_start)]["Amount"].sum()
+    else:
+        manual_deposits_total, forward_payday_auto = 0.0, 0.0
+
+    current_balance = st.session_state.starting_savings_balance + forward_payday_auto + manual_deposits_total
+
+    # --- 2. USER FORECASTING PARAMETERS ---
+    st.markdown("### 🛠️ Projection Assumptions")
+    col_inputs_1, col_inputs_2, col_inputs_3 = st.columns(3)
+    
+    with col_inputs_1:
+        st.markdown("**🔄 Ongoing Regular Changes**")
+        recurring_extra = st.number_input("Monthly Extra Contribution ($):", min_value=0.0, value=0.0, step=50.0, format="%.2f")
+        recurring_withdrawal = st.number_input("Monthly Planned Withdrawal ($):", min_value=0.0, value=0.0, step=50.0, format="%.2f")
+        
+    with col_inputs_2:
+        st.markdown("**⚡ One-Time High-Impact Events**")
+        one_time_add = st.number_input("One-Time Expected Cash Inflow (e.g., Tax Refund) ($):", min_value=0.0, value=0.0, step=100.0, format="%.2f")
+        one_time_subtract = st.number_input("One-Time Planned Purchase / Expense ($):", min_value=0.0, value=0.0, step=100.0, format="%.2f")
+        
+    with col_inputs_3:
+        st.markdown("**🏦 Fixed Account Parameters**")
+        st.metric(label="Current Live Starting Balance", value=f"${current_balance:,.2f}")
+        st.metric(label="Automatic Allocation Per Paycheck", value=f"${savings_per_paycheck:,.2f}")
+
+    # --- 3. RUN SIMULATION MATHEMATICS ---
+    # Determine remaining paydays left in the calendar year
+    projected_paydays = project_payday_cadence(st.session_state.first_payday, st.session_state.pay_frequency, today.year)
+    future_paydays_count = sum(1 for payday in projected_paydays if today <= payday <= eoy_date)
+    
+    # Simple monthly count calculation for remaining fractional year chunks
+    months_left = max(1, round(days_left / 30.44))
+    
+    # Calculate compounded metrics
+    total_auto_payday_growth = future_paydays_count * savings_per_paycheck
+    total_recurring_additions = recurring_extra * months_left
+    total_recurring_subtractions = recurring_withdrawal * months_left
+    
+    projected_eoy_balance = (
+        current_balance 
+        + total_auto_payday_growth 
+        + total_recurring_additions 
+        - total_recurring_subtractions 
+        + one_time_add 
+        - one_time_subtract
+    )
+
+    st.markdown("---")
+    st.markdown(f"### 📈 Forecasted Target: {eoy_date.strftime('%B %d, %Y')}")
+    
+    # Highlight Metrics Banner
+    metric_l, metric_m, metric_r = st.columns(3)
+    with metric_l:
+        st.metric(
+            label="Estimated End of Year Balance", 
+            value=f"${projected_eoy_balance:,.2f}", 
+            delta=f"${(projected_eoy_balance - current_balance):+,.2f} total change"
+        )
+    with metric_m:
+        st.metric(label="Remaining Paychecks This Year", value=f"{future_paydays_count} checks")
+    with metric_r:
+        st.metric(label="Guaranteed Payday Inflows", value=f"${total_auto_payday_growth:,.2f}")
+
+    # --- 4. DATA BREAKDOWN VISUAL TABLE ---
+    st.markdown("#### 📋 Cash Flow Projection Ledger Breakdown")
+    breakdown_data = {
+        "Financial Component Category": [
+            "Current Base Balance (As of Today)",
+            f"Expected Payday Splits Accumulation ({future_paydays_count} remaining checks)",
+            f"Simulated Ongoing Monthly Additions ({months_left} months remaining)",
+            f"Simulated Ongoing Monthly Withdrawals ({months_left} months remaining)",
+            "Lump-Sum Inflows Scenario Added",
+            "Lump-Sum Outflows Scenario Deducted",
+            "Estimated Milestone Final Balance"
+        ],
+        "Cash Impact Value": [
+            f"${current_balance:,.2f}",
+            f"+${total_auto_payday_growth:,.2f}",
+            f"+${total_recurring_additions:,.2f}",
+            f"-${total_recurring_subtractions:,.2f}",
+            f"+${one_time_add:,.2f}",
+            f"-${one_time_subtract:,.2f}",
+            f"${projected_eoy_balance:,.2f}"
+        ]
+    }
+    st.table(pd.DataFrame(breakdown_data))
