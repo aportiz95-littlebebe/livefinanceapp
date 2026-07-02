@@ -485,28 +485,28 @@ def render_savings_dashboard():
                 
             st.markdown("---")
 def render_projection_dashboard():
-    st.subheader("🔮 End-of-Year Savings Projection")
-    st.caption("Simulate your financial future by forecasting your savings balance up to December 31st.")
-    
+    st.subheader("🔮 Granular Bucket & Cash Flow Projections")
+    st.caption("Simulate bucket-specific changes over time, including upcoming planned expenditures and subsequent payday recovery splits.")
+
     today = datetime.now().date()
     eoy_date = date(today.year, 12, 31)
     days_left = (eoy_date - today).days
-    
+
     if days_left <= 0:
-        st.warning("You are already at or past the end of the current year! Projections will calculate for next year's end.")
+        st.warning("Calculations are shifting layout targets forward to next year's projection timeline.")
         eoy_date = date(today.year + 1, 12, 31)
         days_left = (eoy_date - today).days
 
-    # --- 1. GATHER DYNAMIC BASELINES ---
+    # --- 1. LIVE DATA AND CODES PARSING ---
     interval_days = 7 if st.session_state.pay_frequency == "Weekly" else (30 if st.session_state.pay_frequency == "Monthly" else 14)
     base_income = st.session_state.get("base_pay", 0.0)
-    savings_per_paycheck = base_income * (st.session_state.pct_split_savings / 100.0)
-    
-    # Calculate current live total savings balance using your existing math structure
-    bucket_balances, allocated_total, _, _ = calculate_bucket_balances(st.session_state.bucket_config, st.session_state.savings_ledger)
+    savings_target_pool = base_income * (st.session_state.pct_split_savings / 100.0)
+
+    # Resolve live balances matching calculations.py rule architectures
+    bucket_balances, allocated_total, unassigned_pct, _ = calculate_bucket_balances(st.session_state.bucket_config, st.session_state.savings_ledger)
     df_sav = st.session_state.savings_ledger.copy() if st.session_state.savings_ledger is not None else pd.DataFrame()
     tracking_start = st.session_state.get('tracking_start_date', today)
-    
+
     if not df_sav.empty:
         df_sav['Date'] = pd.to_datetime(df_sav['Date']).dt.date
         manual_deposits_total = df_sav[(df_sav["Type"] != "Payday Split") & (df_sav["Date"] > tracking_start)]["Amount"].sum()
@@ -514,85 +514,167 @@ def render_projection_dashboard():
     else:
         manual_deposits_total, forward_payday_auto = 0.0, 0.0
 
-    current_balance = st.session_state.starting_savings_balance + forward_payday_auto + manual_deposits_total
+    net_total_savings = st.session_state.starting_savings_balance + forward_payday_auto + manual_deposits_total
+    unallocated_starting_bal = net_total_savings - allocated_total
 
-    # --- 2. USER FORECASTING PARAMETERS ---
-    st.markdown("### 🛠️ Projection Assumptions")
-    col_inputs_1, col_inputs_2, col_inputs_3 = st.columns(3)
-    
-    with col_inputs_1:
-        st.markdown("**🔄 Ongoing Regular Changes**")
-        recurring_extra = st.number_input("Monthly Extra Contribution ($):", min_value=0.0, value=0.0, step=50.0, format="%.2f")
-        recurring_withdrawal = st.number_input("Monthly Planned Withdrawal ($):", min_value=0.0, value=0.0, step=50.0, format="%.2f")
-        
-    with col_inputs_2:
-        st.markdown("**⚡ One-Time High-Impact Events**")
-        one_time_add = st.number_input("One-Time Expected Cash Inflow (e.g., Tax Refund) ($):", min_value=0.0, value=0.0, step=100.0, format="%.2f")
-        one_time_subtract = st.number_input("One-Time Planned Purchase / Expense ($):", min_value=0.0, value=0.0, step=100.0, format="%.2f")
-        
-    with col_inputs_3:
-        st.markdown("**🏦 Fixed Account Parameters**")
-        st.metric(label="Current Live Starting Balance", value=f"${current_balance:,.2f}")
-        st.metric(label="Automatic Allocation Per Paycheck", value=f"${savings_per_paycheck:,.2f}")
+    # Define all existing, recognized tracks
+    all_buckets = ["Unallocated Savings"] + list(st.session_state.bucket_config.keys())
+    all_buckets = list(dict.fromkeys(all_buckets))
 
-    # --- 3. RUN SIMULATION MATHEMATICS ---
-    # Determine remaining paydays left in the calendar year
+    # Initialize simulation baseline state dictionary
+    simulated_balances = {}
+    for b_name in all_buckets:
+        if b_name == "Unallocated Savings":
+            simulated_balances[b_name] = unallocated_starting_bal
+        else:
+            simulated_balances[b_name] = bucket_balances.get(b_name, 0.0)
+
+    # --- 2. INTERACTIVE SIMULATION OVERLAYS ---
+    st.markdown("### 🛠️ Step 1: Design Scheduled Events")
+    st.caption("Plan single or recurring changes (e.g., a Tuition Withdrawal in 2 months) to see how buckets recover over time.")
+
+    # Generate a dynamic event planner grid state via session cache
+    if "projection_events" not in st.session_state:
+        st.session_state.projection_events = []
+
+    evt_col1, evt_col2, evt_col3, evt_col4 = st.columns([1.5, 1.2, 1.2, 1.0])
+    with evt_col1:
+        chosen_b = st.selectbox("Select Target Bucket", all_buckets, key="proj_evt_bucket")
+    with evt_col2:
+        evt_type = st.selectbox("Action Type", ["One-Time Withdrawal", "One-Time Inflow / Deposit"], key="proj_evt_type")
+    with evt_col3:
+        evt_amt = st.number_input("Amount ($)", min_value=0.0, step=100.0, format="%.2f", key="proj_evt_amt")
+    with evt_col4:
+        # Simple projection horizon limit options
+        months_out = st.selectbox("Timeline Horizon", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], format_func=lambda x: f"In {x} Months", key="proj_evt_months")
+
+    if st.button("➕ Add Event to Simulation Schedule", use_container_width=True):
+        if evt_amt > 0:
+            target_date = today + timedelta(days=months_out * 30.44)
+            st.session_state.projection_events.append({
+                "Bucket": chosen_b,
+                "Type": evt_type,
+                "Amount": evt_amt,
+                "Target Date": target_date
+            })
+            st.toast("Simulated schedule item pinned!", icon="📌")
+
+    # Display actively tracked scenario items
+    if st.session_state.projection_events:
+        st.markdown("##### 📌 Scheduled Simulation Modifiers")
+        for idx, item in enumerate(st.session_state.projection_events):
+            act_label = "Deducting" if "Withdrawal" in item["Type"] else "Injecting"
+            st.info(f"⏳ **{item['Target Date'].strftime('%B %Y')}**: {act_label} **${item['Amount']:,.2f}** from **{item['Bucket']}** "
+                    f"| [❌ Remove Item](javascript:void(0);)", icon="📆")
+        if st.button("🗑️ Clear All Scenario Events"):
+            st.session_state.projection_events = []
+            st.rerun()
+
+    # --- 3. EXECUTE CHRONOLOGICAL ROLLING SIMULATION ---
     projected_paydays = project_payday_cadence(st.session_state.first_payday, st.session_state.pay_frequency, today.year)
-    future_paydays_count = sum(1 for payday in projected_paydays if today <= payday <= eoy_date)
-    
-    # Simple monthly count calculation for remaining fractional year chunks
-    months_left = max(1, round(days_left / 30.44))
-    
-    # Calculate compounded metrics
-    total_auto_payday_growth = future_paydays_count * savings_per_paycheck
-    total_recurring_additions = recurring_extra * months_left
-    total_recurring_subtractions = recurring_withdrawal * months_left
-    
-    projected_eoy_balance = (
-        current_balance 
-        + total_auto_payday_growth 
-        + total_recurring_additions 
-        - total_recurring_subtractions 
-        + one_time_add 
-        - one_time_subtract
-    )
+    future_paydays = sorted([pd for pd in projected_paydays if today <= pd <= eoy_date])
 
+    # Blend paydays and user scheduled simulation events chronologically
+    timeline_queue = []
+    for payday in future_paydays:
+        timeline_queue.append({"Date": payday, "Type": "PAYDAY", "Meta": None})
+    for evt in st.session_state.projection_events:
+        timeline_queue.append({"Date": evt["Target Date"], "Type": "USER_EVENT", "Meta": evt})
+
+    timeline_queue = sorted(timeline_queue, key=lambda x: x["Date"])
+
+    # Track historical data points for building a comparison frame
+    simulation_snapshots = []
+
+    # Process all timeline changes sequentially
+    for step in timeline_queue:
+        current_step_date = step["Date"]
+        
+        if step["Type"] == "PAYDAY":
+            # Run paycheck percentage split rules replicated from views.py logic
+            base_pool = savings_target_pool
+            total_spillover = 0.0
+
+            for b_name, b_data in st.session_state.bucket_config.items():
+                b_pct = float(b_data.get("pct", 0.0))
+                b_overflow = bool(b_data.get("overflow", False))
+                b_target = st.session_state.bucket_targets.get(b_name, 0.0)
+
+                if (dep := base_pool * (b_pct / 100.0)) > 0:
+                    actual_dep = dep
+                    if b_overflow and b_target > 0:
+                        room_left = max(0.0, b_target - simulated_balances.get(b_name, 0.0))
+                        if dep > room_left:
+                            actual_dep = room_left
+                            total_spillover += (dep - room_left)
+
+                    if b_name in simulated_balances:
+                        simulated_balances[b_name] += actual_dep
+
+            # Apply left over balance percentage assignments or spillovers to unallocated tracks
+            unassigned_dep = base_pool * (unassigned_pct / 100.0) + total_spillover
+            simulated_balances["Unallocated Savings"] += unassigned_dep
+
+        elif step["Type"] == "USER_EVENT":
+            meta = step["Meta"]
+            t_bucket = meta["Bucket"]
+            amt = meta["Amount"]
+            
+            if "Withdrawal" in meta["Type"]:
+                simulated_balances[t_bucket] -= amt
+            else:
+                simulated_balances[t_bucket] += amt
+
+        # Store a snapshot copy of current processing metrics state
+        snapshot = {"Date": current_step_date}
+        for b_name, b_val in simulated_balances.items():
+            snapshot[b_name] = b_val
+        simulation_snapshots.append(snapshot)
+
+    # --- 4. RENDER SIMULATION FORECAST RESULTS ---
     st.markdown("---")
-    st.markdown(f"### 📈 Forecasted Target: {eoy_date.strftime('%B %d, %Y')}")
-    
-    # Highlight Metrics Banner
-    metric_l, metric_m, metric_r = st.columns(3)
-    with metric_l:
-        st.metric(
-            label="Estimated End of Year Balance", 
-            value=f"${projected_eoy_balance:,.2f}", 
-            delta=f"${(projected_eoy_balance - current_balance):+,.2f} total change"
-        )
-    with metric_m:
-        st.metric(label="Remaining Paychecks This Year", value=f"{future_paydays_count} checks")
-    with metric_r:
-        st.metric(label="Guaranteed Payday Inflows", value=f"${total_auto_payday_growth:,.2f}")
+    st.markdown("### 📊 Step 2: Simulation Outcome Analysis")
 
-    # --- 4. DATA BREAKDOWN VISUAL TABLE ---
-    st.markdown("#### 📋 Cash Flow Projection Ledger Breakdown")
-    breakdown_data = {
-        "Financial Component Category": [
-            "Current Base Balance (As of Today)",
-            f"Expected Payday Splits Accumulation ({future_paydays_count} remaining checks)",
-            f"Simulated Ongoing Monthly Additions ({months_left} months remaining)",
-            f"Simulated Ongoing Monthly Withdrawals ({months_left} months remaining)",
-            "Lump-Sum Inflows Scenario Added",
-            "Lump-Sum Outflows Scenario Deducted",
-            "Estimated Milestone Final Balance"
-        ],
-        "Cash Impact Value": [
-            f"${current_balance:,.2f}",
-            f"+${total_auto_payday_growth:,.2f}",
-            f"+${total_recurring_additions:,.2f}",
-            f"-${total_recurring_subtractions:,.2f}",
-            f"+${one_time_add:,.2f}",
-            f"-${one_time_subtract:,.2f}",
-            f"${projected_eoy_balance:,.2f}"
-        ]
-    }
-    st.table(pd.DataFrame(breakdown_data))
+    if not simulation_snapshots:
+        st.info("No paydays or schedule items remaining in the active calendar horizon year scope.")
+        return
+
+    # Comparison metrics summary block
+    col_res1, col_res2 = st.columns(2)
+    with col_res1:
+        st.metric(label="Current Starting Total", value=f"${net_total_savings:,.2f}")
+    with col_res2:
+        final_sim_total = sum(simulated_balances.values())
+        st.metric(label="Projected End-of-Year Simulated Balance", value=f"${final_sim_total:,.2f}",
+                  delta=f"${(final_sim_total - net_total_savings):+,.2f} net delta variation")
+
+    st.markdown("#### 🎯 Estimated Bucket Endpoints Table")
+    
+    table_rows = []
+    for b_name in all_buckets:
+        initial_v = unallocated_starting_bal if b_name == "Unallocated Savings" else bucket_balances.get(b_name, 0.0)
+        final_v = simulated_balances.get(b_name, 0.0)
+        target_v = st.session_state.bucket_targets.get(b_name, 0.0) if b_name != "Unallocated Savings" else 0.0
+        
+        status_flag = "💪 Growing Stable"
+        if final_v < initial_v:
+            status_flag = "⚠️ Net Drop via Expenditures"
+        if target_v > 0 and final_v >= target_v:
+            status_flag = "✨ Goal Cap Met!"
+
+        table_rows.append({
+            "Savings Allocation Track": b_name,
+            "Live Current Balance": f"${initial_v:,.2f}",
+            "Projected Year-End Value": f"${final_v:,.2f}",
+            "Delta Shift": f"${(final_v - initial_v):+,.2f}",
+            "Simulation Milestone Status": status_flag
+        })
+        
+    st.table(pd.DataFrame(table_rows))
+
+    # Optional detailed historical logs audit drop panel container
+    with st.expander("🔍 View Chronological Ledger Simulation Steps"):
+        log_df = pd.DataFrame(simulation_snapshots)
+        if not log_df.empty:
+            log_df["Date"] = log_df["Date"].apply(lambda d: d.strftime("%Y-%m-%d"))
+            st.dataframe(log_df, use_container_width=True, hide_index=True)
