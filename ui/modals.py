@@ -342,11 +342,10 @@ def render_projection_math_modal():
     total_pool = base_pay * (sav_pct / 100.0)
     
     # Cleaned up mathematical string formatting to prevent font rendering glitches
-st.info(f"**Your Current Baseline:** Base Pay (**${base_pay:,.2f}**) × Savings Allocation (**{sav_pct}%**) = **${total_pool:,.2f}** distributed per payday.")
+    st.info(f"**Your Current Baseline:** Base Pay (**${base_pay:,.2f}**) × Savings Allocation (**{sav_pct}%**) = **${total_pool:,.2f}** distributed per payday.")
     
     st.write("When the simulator hits a scheduled **Payday**, it divides that pool based on your Bucket configurations:")
     
-    # Calculate live split examples
     unassigned_pct = 100.0
     for b_name, b_data in st.session_state.get("bucket_config", {}).items():
         b_pct = float(b_data.get("pct", 0.0))
