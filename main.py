@@ -82,7 +82,7 @@ with tab_dashboard:
 with tab_savings:
     render_savings_dashboard()
 
-# NEW TAB EXECUTION BLOCK
+# EXECUTE CHRONOLOGICAL SIMULATOR RENDER LOOP
 with tab_projections:
     from ui.views import render_projection_dashboard
     render_projection_dashboard()
