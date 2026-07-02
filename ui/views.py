@@ -675,27 +675,44 @@ def render_projection_dashboard():
             snapshot[b_name] = b_val
         simulation_snapshots.append(snapshot)
 
+    # --- 5. RENDER SIMULATION FORECAST RESULTS ---
+    st.markdown("---")
+    st.markdown("### 📈 Projection Timeline")
+
     if simulation_snapshots:
         chart_df = pd.DataFrame(simulation_snapshots)
         chart_df.set_index("Date", inplace=True)
         
-        # Extract all the bucket names (columns) from our dataframe
         available_buckets = chart_df.columns.tolist()
         
-        # Add a multiselect widget, defaulting to showing everything
+        # Callback function to instantly clear the multiselect field
+        def clear_chart_filters():
+            st.session_state.proj_chart_filter_multiselect = []
+
         st.markdown("#### 📊 Filter Chart View")
-        selected_buckets = st.multiselect(
-            "Select which buckets to display on the graph:",
-            options=available_buckets,
-            default=available_buckets,
-            key="proj_chart_filter_multiselect"
-        )
         
-        # Only render the chart if at least one item is selected
-        if selected_buckets:
-            filtered_df = chart_df[selected_buckets]
-            st.line_chart(filtered_df, use_container_width=True)
+        # Side-by-side layout for the dropdown and the reset button
+        filter_col, reset_col = st.columns([4, 1], vertical_alignment="bottom")
+        
+        with filter_col:
+            # We removed the 'default' parameter. It now loads empty.
+            selected_buckets = st.multiselect(
+                "Select specific buckets to isolate (leave blank to show all):",
+                options=available_buckets,
+                key="proj_chart_filter_multiselect"
+            )
+            
+        with reset_col:
+            st.button("🔄 Reset View", on_click=clear_chart_filters, use_container_width=True)
+
+        # The new filtering logic: 
+        # If nothing is selected OR everything is selected, show the entire dataframe.
+        if len(selected_buckets) == 0 or len(selected_buckets) == len(available_buckets):
+            filtered_df = chart_df
         else:
-            st.warning("Please select at least one bucket from the dropdown above to view the chart.")
+            # Otherwise, only show the exact buckets chosen
+            filtered_df = chart_df[selected_buckets]
+            
+        st.line_chart(filtered_df, use_container_width=True)
     else:
         st.info("No future transactions or paydays were identified inside the selected range.")
