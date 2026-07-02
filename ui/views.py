@@ -563,40 +563,44 @@ def render_projection_dashboard():
         if "projection_events" not in st.session_state:
             st.session_state.projection_events = []
 
+        # --- NEW: Callbacks to save state without breaking the page ---
+        def add_scheduled_event():
+            amt = st.session_state.get("proj_evt_amt", 0.0)
+            if amt > 0:
+                st.session_state.projection_events.append({
+                    "Bucket": st.session_state.get("proj_evt_bucket"),
+                    "Type": st.session_state.get("proj_evt_type"),
+                    "Amount": amt,
+                    "Target Date": st.session_state.get("proj_evt_date")
+                })
+                
+        def clear_scheduled_events():
+            st.session_state.projection_events = []
+
         evt_row1_col1, evt_row1_col2 = st.columns(2)
         with evt_row1_col1:
-            chosen_b = st.selectbox("Target Bucket", all_buckets, key="proj_evt_bucket")
+            st.selectbox("Target Bucket", all_buckets, key="proj_evt_bucket")
         with evt_row1_col2:
-            evt_type = st.selectbox("Action Type", ["One-Time Withdrawal", "One-Time Inflow / Deposit"], key="proj_evt_type")
+            st.selectbox("Action Type", ["One-Time Withdrawal", "One-Time Inflow / Deposit"], key="proj_evt_type")
             
         evt_row2_col1, evt_row2_col2 = st.columns(2)
         with evt_row2_col1:
-            evt_amt = st.number_input("Amount ($)", min_value=0.0, step=100.0, format="%.2f", key="proj_evt_amt")
+            st.number_input("Amount ($)", min_value=0.0, step=100.0, format="%.2f", key="proj_evt_amt")
         with evt_row2_col2:
-            # --- SWAPPED: Real interactive date calendar! ---
-            chosen_date = st.date_input("Event Date", value=today, min_value=today, key="proj_evt_date")
+            st.date_input("Event Date", value=today, min_value=today, key="proj_evt_date")
 
         add_btn_col, reset_btn_col = st.columns([1, 1])
         with add_btn_col:
-            if st.button("➕ Add Event", use_container_width=True):
-                if evt_amt > 0:
-                    st.session_state.projection_events.append({
-                        "Bucket": chosen_b,
-                        "Type": evt_type,
-                        "Amount": evt_amt,
-                        "Target Date": chosen_date # Pipes the exact date straight to the graph
-                    })
-                    st.rerun()
+            # Replaced st.rerun() with a native on_click callback
+            st.button("➕ Add Event", use_container_width=True, on_click=add_scheduled_event)
                     
         with reset_btn_col:
-            if st.button("🔄 Reset Schedule", use_container_width=True):
-                st.session_state.projection_events = []
-                st.rerun()
+            # Replaced st.rerun() with a native on_click callback
+            st.button("🔄 Reset Schedule", use_container_width=True, on_click=clear_scheduled_events)
 
         if st.session_state.projection_events:
             for idx, item in enumerate(st.session_state.projection_events):
                 act_label = "Deducting" if "Withdrawal" in item["Type"] else "Injecting"
-                # Formatted the date display to be fully human-readable (e.g. July 02, 2026)
                 st.info(f"⏳ **{item['Target Date'].strftime('%B %d, %Y')}**: {act_label} **${item['Amount']:,.2f}** from **{item['Bucket']}**", icon="📆")
 
     # --- BOTTOM SECTION: HORIZON & CHART ---
