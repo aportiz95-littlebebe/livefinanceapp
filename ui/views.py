@@ -485,6 +485,7 @@ def render_savings_dashboard():
                 
             st.markdown("---")
 def render_projection_dashboard():
+    # Header Section
     head_col1, head_col2 = st.columns([3.5, 1])
     with head_col1:
         st.subheader("🔮 Savings Bucket & Cash Flow Projections")
@@ -496,34 +497,16 @@ def render_projection_dashboard():
 
     today = datetime.now().date()
     
-    # --- LIVE DATA PARSING (Moved up so the UI can use it) ---
-    interval_days = 7 if st.session_state.pay_frequency == "Weekly" else (30 if st.session_state.pay_frequency == "Monthly" else 14)
+    # --- DATA PARSING ---
     base_income = st.session_state.get("base_pay", 0.0)
     savings_target_pool = base_income * (st.session_state.pct_split_savings / 100.0)
-
     bucket_balances, allocated_total, unassigned_pct, _ = calculate_bucket_balances(st.session_state.bucket_config, st.session_state.savings_ledger)
-    df_sav = st.session_state.savings_ledger.copy() if st.session_state.savings_ledger is not None else pd.DataFrame()
-    tracking_start = st.session_state.get('tracking_start_date', today)
-
-    if not df_sav.empty:
-        df_sav['Date'] = pd.to_datetime(df_sav['Date']).dt.date
-        manual_deposits_total = df_sav[(df_sav["Type"] != "Payday Split") & (df_sav["Date"] > tracking_start)]["Amount"].sum()
-        forward_payday_auto = df_sav[(df_sav["Type"] == "Payday Split") & (df_sav["Date"] > tracking_start)]["Amount"].sum()
-    else:
-        manual_deposits_total, forward_payday_auto = 0.0, 0.0
-
-    net_total_savings = st.session_state.starting_savings_balance + forward_payday_auto + manual_deposits_total
-    unallocated_starting_bal = net_total_savings - allocated_total
-
+    
     all_buckets = ["Unallocated Savings"] + list(st.session_state.bucket_config.keys())
     all_buckets = list(dict.fromkeys(all_buckets))
-
-    simulated_balances = {}
-    for b_name in all_buckets:
-        if b_name == "Unallocated Savings":
-            simulated_balances[b_name] = unallocated_starting_bal
-        else:
-            simulated_balances[b_name] = bucket_balances.get(b_name, 0.0)
+    
+    simulated_balances = {b: bucket_balances.get(b, 0.0) for b in all_buckets}
+    simulated_balances["Unallocated Savings"] = (st.session_state.starting_savings_balance - allocated_total)
 
     st.markdown("---")
 
@@ -532,234 +515,74 @@ def render_projection_dashboard():
 
     with left_col:
         st.markdown("### 🎛️ Step 1: Scenario Adjustments")
-        st.caption("Temporarily tweak your deposit percentages below. These changes will NOT save to your main budget.")
-
+        st.caption("Temporarily tweak your deposit percentages. Changes reset on refresh.")
         sim_percentages = {}
         total_sim_pct = 0.0
-
-        if st.session_state.bucket_config:
-            # Shifted to 2 columns so it fits nicely inside the left panel
-            pct_cols = st.columns(2)
-            for idx, (b_name, b_data) in enumerate(st.session_state.bucket_config.items()):
-                current_pct = float(b_data.get("pct", 0.0))
-                with pct_cols[idx % 2]:
-                    new_pct = st.number_input(f"{b_name} (%)", min_value=0.0, max_value=100.0, value=current_pct, step=1.0, key=f"sim_pct_{b_name}")
-                    sim_percentages[b_name] = new_pct
-                    total_sim_pct += new_pct
-                    
+        pct_cols = st.columns(2)
+        for idx, (b_name, b_data) in enumerate(st.session_state.bucket_config.items()):
+            with pct_cols[idx % 2]:
+                val = st.number_input(f"{b_name} (%)", min_value=0.0, max_value=100.0, value=float(b_data.get("pct", 0.0)), step=1.0, key=f"sim_pct_{b_name}")
+                sim_percentages[b_name] = val
+                total_sim_pct += val
         sim_unassigned_pct = max(0.0, 100.0 - total_sim_pct)
 
-        if total_sim_pct > 100.0:
-            st.error(f"⚠️ Your allocation totals {total_sim_pct}%. It must be exactly 100% or less to simulate accurately.")
-            st.stop()
-        else:
-            st.success(f"Remaining **{sim_unassigned_pct:.1f}%** will flow into Unallocated Savings.")
-
-
     with right_col:
-            st.markdown("### 🛠️ Step 2: Schedule Future Events")
-            st.caption("Plan one-time or recurring inflows/outflows.")
+        st.markdown("### 🛠️ Step 2: Schedule Future Events")
+        if "projection_events" not in st.session_state: st.session_state.projection_events = []
 
-            if "projection_events" not in st.session_state:
-                st.session_state.projection_events = []
+        def add_scheduled_event():
+            if st.session_state.proj_evt_amt > 0:
+                st.session_state.projection_events.append({
+                    "Bucket": st.session_state.proj_evt_bucket,
+                    "Type": st.session_state.proj_evt_type,
+                    "Amount": st.session_state.proj_evt_amt,
+                    "Target Date": st.session_state.proj_evt_date,
+                    "Frequency": "Monthly" if "Recurring" in st.session_state.proj_evt_type else "None"
+                })
 
-            # --- ROW 1: Bucket and Action Type ---
-            evt_row1_col1, evt_row1_col2 = st.columns(2)
-            with evt_row1_col1:
-                chosen_b = st.selectbox("Target Bucket", all_buckets, key="proj_evt_bucket")
-            with evt_row1_col2:
-                evt_type = st.selectbox("Action Type", ["One-Time Withdrawal", "One-Time Deposit", "Recurring Monthly Deposit"], key="proj_evt_type")
-            
-            # --- ROW 2: Amount and Date/Frequency ---
-            evt_row2_col1, evt_row2_col2 = st.columns(2)
-            with evt_row2_col1:
-                evt_amt = st.number_input("Amount ($)", min_value=0.0, step=10.0, format="%.2f", key="proj_evt_amt")
-            with evt_row2_col2:
-                if "One-Time" in evt_type:
-                    chosen_date = st.date_input("Event Date", value=today, min_value=today, key="proj_evt_date")
-                    evt_freq = "None"
-                else:
-                    st.write("Starts from today")
-                    chosen_date = today
-                    evt_freq = "Monthly"
+        r1, r2 = st.columns(2)
+        with r1: st.selectbox("Target Bucket", all_buckets, key="proj_evt_bucket")
+        with r2: st.selectbox("Action Type", ["One-Time Withdrawal", "One-Time Deposit", "Recurring Monthly Deposit"], key="proj_evt_type")
+        
+        r3, r4 = st.columns(2)
+        with r3: st.number_input("Amount ($)", min_value=0.0, step=10.0, key="proj_evt_amt")
+        with r4: st.date_input("Event Date", value=today, min_value=today, key="proj_evt_date")
 
-            # --- ADD/RESET LOGIC ---
-            def add_scheduled_event():
-                amt = st.session_state.get("proj_evt_amt", 0.0)
-                if amt > 0:
-                    st.session_state.projection_events.append({
-                        "Bucket": st.session_state.get("proj_evt_bucket"),
-                        "Type": st.session_state.get("proj_evt_type"),
-                        "Amount": amt,
-                        "Target Date": st.session_state.get("proj_evt_date"),
-                        "Frequency": evt_freq
-                    })
-            
-            add_btn_col, reset_btn_col = st.columns([1, 1])
-            with add_btn_col: st.button("➕ Add Event", use_container_width=True, on_click=add_scheduled_event)
-            with reset_btn_col: st.button("🔄 Reset Schedule", use_container_width=True, on_click=lambda: st.session_state.update({"projection_events": []}))
+        c_add, c_reset = st.columns(2)
+        with c_add: st.button("➕ Add Event", use_container_width=True, on_click=add_scheduled_event)
+        with c_reset: st.button("🔄 Reset Schedule", use_container_width=True, on_click=lambda: st.session_state.update({"projection_events": []}))
 
-            # --- EVENT DISPLAY ---
-            if st.session_state.projection_events:
-                for item in st.session_state.projection_events:
-                    freq_txt = f" / {item['Frequency']}" if item['Frequency'] != "None" else ""
-                    act_label = "Deducting" if "Withdrawal" in item["Type"] else "Injecting"
-                    st.info(f"⏳ **{item['Target Date'].strftime('%b %d, %Y')}**{freq_txt}: {act_label} **${item['Amount']:,.2f}** ({item['Bucket']})", icon="📆")
-                
-        def clear_scheduled_events():
-            st.session_state.projection_events = []
-
-        evt_row1_col1, evt_row1_col2 = st.columns(2)
-        with evt_row1_col1:
-            st.selectbox("Target Bucket", all_buckets, key="proj_evt_bucket")
-        with evt_row1_col2:
-            st.selectbox("Action Type", ["One-Time Withdrawal", "One-Time Inflow / Deposit"], key="proj_evt_type")
-            
-        evt_row2_col1, evt_row2_col2 = st.columns(2)
-        with evt_row2_col1:
-            st.number_input("Amount ($)", min_value=0.0, step=100.0, format="%.2f", key="proj_evt_amt")
-        with evt_row2_col2:
-            st.date_input("Event Date", value=today, min_value=today, key="proj_evt_date")
-
-        add_btn_col, reset_btn_col = st.columns([1, 1])
-        with add_btn_col:
-            # Replaced st.rerun() with a native on_click callback
-            st.button("➕ Add Event", use_container_width=True, on_click=add_scheduled_event)
-                    
-        with reset_btn_col:
-            # Replaced st.rerun() with a native on_click callback
-            st.button("🔄 Reset Schedule", use_container_width=True, on_click=clear_scheduled_events)
-
-        if st.session_state.projection_events:
-            for idx, item in enumerate(st.session_state.projection_events):
-                act_label = "Deducting" if "Withdrawal" in item["Type"] else "Injecting"
-                st.info(f"⏳ **{item['Target Date'].strftime('%B %d, %Y')}**: {act_label} **${item['Amount']:,.2f}** from **{item['Bucket']}**", icon="📆")
-
-    # --- BOTTOM SECTION: HORIZON & CHART ---
+    # --- BOTTOM SECTION: CHART ---
     st.markdown("---")
     st.markdown("### 🗓️ Step 3: Set Horizon & View Results")
-    
-    simulation_months = st.number_input(
-        "Months to project into the future:", 
-        min_value=1, 
-        max_value=120, 
-        value=24, 
-        step=6, 
-        key="proj_horizon_chart_months"
-    )
-    
-    total_days = int(simulation_months * 30.44)
-    eoy_date = today + timedelta(days=total_days)
+    months = st.number_input("Months to project:", min_value=1, max_value=120, value=24, key="proj_horizon")
+    eoy_date = today + timedelta(days=int(months * 30.44))
 
-    # --- EXECUTE CHRONOLOGICAL ROLLING SIMULATION ---
-    projected_paydays = project_payday_cadence(st.session_state.first_payday, st.session_state.pay_frequency, eoy_date.year + 1)
-    future_paydays = sorted([payday for payday in projected_paydays if today <= payday <= eoy_date])
+    # --- SIMULATION LOGIC ---
+    future_paydays = [p for p in project_payday_cadence(st.session_state.first_payday, st.session_state.pay_frequency, eoy_date.year + 1) if today <= p <= eoy_date]
+    timeline = sorted([{"Date": d, "Type": "PAYDAY"} for d in future_paydays] + [{"Date": e["Target Date"], "Type": "USER_EVENT", "Meta": e} for e in st.session_state.projection_events if e["Target Date"] <= eoy_date], key=lambda x: x["Date"])
 
-    timeline_queue = []
-    
-    snapshot_today = {"Date": today}
-    for b_name, b_val in simulated_balances.items():
-        snapshot_today[b_name] = b_val
-    simulation_snapshots = [snapshot_today]
-
-    for payday in future_paydays:
-        timeline_queue.append({"Date": payday, "Type": "PAYDAY", "Meta": None})
-    for evt in st.session_state.projection_events:
-        if evt["Target Date"] <= eoy_date:
-            timeline_queue.append({"Date": evt["Target Date"], "Type": "USER_EVENT", "Meta": evt})
-
-    timeline_queue = sorted(timeline_queue, key=lambda x: x["Date"])
-
-    for step in timeline_queue:
-        current_step_date = step["Date"]
-        
+    snapshots = [{"Date": today, **simulated_balances}]
+    for step in timeline:
         if step["Type"] == "PAYDAY":
-            base_pool = savings_target_pool
-            total_spillover = 0.0
-
             for b_name, b_data in st.session_state.bucket_config.items():
-                b_pct = sim_percentages.get(b_name, float(b_data.get("pct", 0.0)))
-                b_overflow = bool(b_data.get("overflow", False))
-                b_target = st.session_state.bucket_targets.get(b_name, 0.0)
-
-                if (dep := base_pool * (b_pct / 100.0)) > 0:
-                    actual_dep = dep
-                    if b_overflow and b_target > 0:
-                        room_left = max(0.0, b_target - simulated_balances.get(b_name, 0.0))
-                        if dep > room_left:
-                            actual_dep = room_left
-                            total_spillover += (dep - room_left)
-
-                    if b_name in simulated_balances:
-                        simulated_balances[b_name] += actual_dep
-
-            unassigned_dep = base_pool * (sim_unassigned_pct / 100.0) + total_spillover
-            simulated_balances["Unallocated Savings"] += unassigned_dep
-
+                dep = savings_target_pool * (sim_percentages.get(b_name, float(b_data.get("pct", 0.0))) / 100.0)
+                simulated_balances[b_name] += dep
+            simulated_balances["Unallocated Savings"] += (savings_target_pool * (sim_unassigned_pct / 100.0))
         elif step["Type"] == "USER_EVENT":
             meta = step["Meta"]
-            t_bucket = meta["Bucket"]
-            amt = meta["Amount"]
-            
-            # Check for recurring logic
-            if meta.get("Frequency") == "Monthly":
-                # Only apply if the current step date is the monthly anniversary of the start date
-                if current_step_date.day == meta["Target Date"].day:
-                    if "Withdrawal" in meta["Type"]:
-                        simulated_balances[t_bucket] -= amt
-                    else:
-                        simulated_balances[t_bucket] += amt
-            else:
-                # Standard One-Time logic
-                if current_step_date == meta["Target Date"]:
-                    if "Withdrawal" in meta["Type"]:
-                        simulated_balances[t_bucket] -= amt
-                    else:
-                        simulated_balances[t_bucket] += amt
+            if meta.get("Frequency") == "Monthly" and step["Date"].day == meta["Target Date"].day:
+                simulated_balances[meta["Bucket"]] += (meta["Amount"] if "Deposit" in meta["Type"] else -meta["Amount"])
+            elif step["Date"] == meta["Target Date"]:
+                simulated_balances[meta["Bucket"]] += (meta["Amount"] if "Deposit" in meta["Type"] else -meta["Amount"])
+        snapshots.append({"Date": step["Date"], **simulated_balances})
 
-        snapshot = {"Date": current_step_date}
-        for b_name, b_val in simulated_balances.items():
-            snapshot[b_name] = b_val
-        simulation_snapshots.append(snapshot)
-
-    # --- 5. RENDER SIMULATION FORECAST RESULTS ---
-    st.markdown("---")
-    st.markdown("### 📈 Projection Timeline")
-
-    if simulation_snapshots:
-        chart_df = pd.DataFrame(simulation_snapshots)
-        chart_df.set_index("Date", inplace=True)
+    # --- FILTERED CHART ---
+    chart_df = pd.DataFrame(snapshots).set_index("Date")
+    f_col, r_col = st.columns([4, 1], vertical_alignment="bottom")
+    with f_col:
+        selected = st.multiselect("Filter buckets (leave blank for all):", chart_df.columns.tolist(), key="proj_chart_filter_multiselect")
+    with r_col:
+        st.button("🔄 Reset View", on_click=lambda: st.session_state.update({"proj_chart_filter_multiselect": []}))
         
-        available_buckets = chart_df.columns.tolist()
-        
-        # Callback function to instantly clear the multiselect field
-        def clear_chart_filters():
-            st.session_state.proj_chart_filter_multiselect = []
-
-        st.markdown("#### 📊 Filter Chart View")
-        
-        # Side-by-side layout for the dropdown and the reset button
-        filter_col, reset_col = st.columns([4, 1], vertical_alignment="bottom")
-        
-        with filter_col:
-            # We removed the 'default' parameter. It now loads empty.
-            selected_buckets = st.multiselect(
-                "Select specific buckets to isolate (leave blank to show all):",
-                options=available_buckets,
-                key="proj_chart_filter_multiselect"
-            )
-            
-        with reset_col:
-            st.button("🔄 Reset View", on_click=clear_chart_filters, use_container_width=True)
-
-        # The new filtering logic: 
-        # If nothing is selected OR everything is selected, show the entire dataframe.
-        if len(selected_buckets) == 0 or len(selected_buckets) == len(available_buckets):
-            filtered_df = chart_df
-        else:
-            # Otherwise, only show the exact buckets chosen
-            filtered_df = chart_df[selected_buckets]
-            
-        st.line_chart(filtered_df, use_container_width=True)
-    else:
-        st.info("No future transactions or paydays were identified inside the selected range.")
+    st.line_chart(chart_df[selected] if selected else chart_df, use_container_width=True)
