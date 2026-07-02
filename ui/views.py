@@ -498,11 +498,20 @@ def render_projection_dashboard():
     today = datetime.now().date()
     
     # --- 1. DYNAMIC HORIZON GENERATION ---
-    st.markdown("### 🗓️ Step 1: Automatic 2-Year Projection")
-    st.caption("The timeline below projects your bucket balances 24 months into the future based on your current settings.")
+    st.markdown("### 🗓️ Step 1: Set Simulation Horizon")
+    st.caption("Expand or shrink your timeline to see short-term impacts or long-term growth.")
     
-    # Lock the simulation to a clean 24-month visual horizon
-    total_days = int(24 * 30.44)
+    # We bring back the dynamic input, capped at 10 years (120 months) for server safety
+    simulation_months = st.number_input(
+        "Months to project into the future:", 
+        min_value=1, 
+        max_value=120, 
+        value=24, 
+        step=6, 
+        key="proj_horizon_chart_months"
+    )
+    
+    total_days = int(simulation_months * 30.44)
     eoy_date = today + timedelta(days=total_days)
 
     # --- 2. LIVE DATA AND CODES PARSING ---
