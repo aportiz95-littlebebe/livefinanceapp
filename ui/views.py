@@ -498,20 +498,11 @@ def render_projection_dashboard():
     today = datetime.now().date()
     
     # --- 1. DYNAMIC HORIZON GENERATION ---
-    st.markdown("### 🗓️ Step 1: Set Simulation Horizon")
+    st.markdown("### 🗓️ Step 1: Automatic 2-Year Projection")
+    st.caption("The timeline below projects your bucket balances 24 months into the future based on your current settings.")
     
-    # Allow the user to project as far out as they want instead of a fixed 12-month limit
-    simulation_months = st.number_input(
-        "How many months into the future do you want to project?", 
-        min_value=1, 
-        max_value=120, # Up to 10 years
-        value=12, 
-        step=1, 
-        key="proj_horizon_months"
-    )
-    
-    # Calculate the total days as an integer first
-    total_days = int(simulation_months * 30.44)
+    # Lock the simulation to a clean 24-month visual horizon
+    total_days = int(24 * 30.44)
     eoy_date = today + timedelta(days=total_days)
 
     # --- 2. LIVE DATA AND CODES PARSING ---
@@ -519,7 +510,6 @@ def render_projection_dashboard():
     base_income = st.session_state.get("base_pay", 0.0)
     savings_target_pool = base_income * (st.session_state.pct_split_savings / 100.0)
 
-    # Resolve live balances matching calculations.py rule architectures
     bucket_balances, allocated_total, unassigned_pct, _ = calculate_bucket_balances(st.session_state.bucket_config, st.session_state.savings_ledger)
     df_sav = st.session_state.savings_ledger.copy() if st.session_state.savings_ledger is not None else pd.DataFrame()
     tracking_start = st.session_state.get('tracking_start_date', today)
@@ -534,11 +524,9 @@ def render_projection_dashboard():
     net_total_savings = st.session_state.starting_savings_balance + forward_payday_auto + manual_deposits_total
     unallocated_starting_bal = net_total_savings - allocated_total
 
-    # Define all existing, recognized tracks
     all_buckets = ["Unallocated Savings"] + list(st.session_state.bucket_config.keys())
     all_buckets = list(dict.fromkeys(all_buckets))
 
-    # Initialize simulation baseline state dictionary
     simulated_balances = {}
     for b_name in all_buckets:
         if b_name == "Unallocated Savings":
@@ -548,10 +536,9 @@ def render_projection_dashboard():
 
     # --- 3. INTERACTIVE SIMULATION OVERLAYS ---
     st.markdown("---")
-    st.markdown("### 🛠️ Step 2: Design Scheduled Events")
-    st.caption("Plan single or recurring changes (e.g., a Tuition Withdrawal) to see how buckets recover over time.")
+    st.markdown("### 🛠️ Step 2: Schedule Future Events")
+    st.caption("Plan a withdrawal (like tuition or a vacation) and watch the chart react to see how long recovery takes.")
 
-    # Generate a dynamic event planner grid state via session cache
     if "projection_events" not in st.session_state:
         st.session_state.projection_events = []
 
@@ -563,8 +550,8 @@ def render_projection_dashboard():
     with evt_col3:
         evt_amt = st.number_input("Amount ($)", min_value=0.0, step=100.0, format="%.2f", key="proj_evt_amt")
     with evt_col4:
-        # Changed from selectbox to numerical input tracking up to total configured horizon boundary
-        months_out = st.number_input("Months Out", min_value=1, max_value=int(simulation_months), value=1, step=1, key="proj_evt_months")
+        # User now simply picks how many months out the event happens (max 24)
+        months_out = st.number_input("Months Out", min_value=1, max_value=24, value=1, step=1, key="proj_evt_months")
 
     add_btn_col, reset_btn_col = st.columns([1, 1])
     with add_btn_col:
@@ -577,48 +564,42 @@ def render_projection_dashboard():
                     "Amount": evt_amt,
                     "Target Date": target_date
                 })
-                st.toast("Simulated schedule item pinned!", icon="📌")
                 st.rerun()
                 
     with reset_btn_col:
-        # NEW CLEAR / RESET BUTTON CONTEXT EXECUTOR
-        if st.button("🔄 Reset All Simulated Variations", use_container_width=True):
+        if st.button("🔄 Reset Schedule", use_container_width=True):
             st.session_state.projection_events = []
-            st.toast("Simulation cache cleared back to clean baseline state!", icon="🧼")
             st.rerun()
 
-    # Display actively tracked scenario items
     if st.session_state.projection_events:
-        st.markdown("##### 📌 Scheduled Simulation Modifiers")
         for idx, item in enumerate(st.session_state.projection_events):
             act_label = "Deducting" if "Withdrawal" in item["Type"] else "Injecting"
             st.info(f"⏳ **{item['Target Date'].strftime('%B %Y')}**: {act_label} **${item['Amount']:,.2f}** from **{item['Bucket']}**", icon="📆")
 
     # --- 4. EXECUTE CHRONOLOGICAL ROLLING SIMULATION ---
-    # Projection cadence calculator handles long-range parameters using year thresholds
-    projected_paydays = project_payday_cadence(st.session_state.first_payday, st.session_state.pay_frequency, eoy_date.year)
+    projected_paydays = project_payday_cadence(st.session_state.first_payday, st.session_state.pay_frequency, eoy_date.year + 1)
     future_paydays = sorted([payday for payday in projected_paydays if today <= payday <= eoy_date])
 
-    # Blend paydays and user scheduled simulation events chronologically
     timeline_queue = []
+    
+    # We add a snapshot for TODAY so the graph always starts right now
+    snapshot_today = {"Date": today}
+    for b_name, b_val in simulated_balances.items():
+        snapshot_today[b_name] = b_val
+    simulation_snapshots = [snapshot_today]
+
     for payday in future_paydays:
         timeline_queue.append({"Date": payday, "Type": "PAYDAY", "Meta": None})
     for evt in st.session_state.projection_events:
-        # Ensure event doesn't trigger past our updated dynamic timeline boundary
         if evt["Target Date"] <= eoy_date:
             timeline_queue.append({"Date": evt["Target Date"], "Type": "USER_EVENT", "Meta": evt})
 
     timeline_queue = sorted(timeline_queue, key=lambda x: x["Date"])
 
-    # Track historical data points for building a comparison frame
-    simulation_snapshots = []
-
-    # Process all timeline changes sequentially
     for step in timeline_queue:
         current_step_date = step["Date"]
         
         if step["Type"] == "PAYDAY":
-            # Run paycheck percentage split rules replicated from views.py logic
             base_pool = savings_target_pool
             total_spillover = 0.0
 
@@ -638,7 +619,6 @@ def render_projection_dashboard():
                     if b_name in simulated_balances:
                         simulated_balances[b_name] += actual_dep
 
-            # Apply left over balance percentage assignments or spillovers to unallocated tracks
             unassigned_dep = base_pool * (unassigned_pct / 100.0) + total_spillover
             simulated_balances["Unallocated Savings"] += unassigned_dep
 
@@ -652,7 +632,6 @@ def render_projection_dashboard():
             else:
                 simulated_balances[t_bucket] += amt
 
-        # Store a snapshot copy of current processing metrics state
         snapshot = {"Date": current_step_date}
         for b_name, b_val in simulated_balances.items():
             snapshot[b_name] = b_val
@@ -660,48 +639,16 @@ def render_projection_dashboard():
 
     # --- 5. RENDER SIMULATION FORECAST RESULTS ---
     st.markdown("---")
-    st.markdown("### 📊 Step 3: Simulation Outcome Analysis")
+    st.markdown("### 📈 Projection Timeline")
 
-    if not simulation_snapshots:
-        st.info("No future transactions or paydays were identified inside your chosen time range selection criteria.")
-        return
-
-    # Comparison metrics summary block
-    col_res1, col_res2 = st.columns(2)
-    with col_res1:
-        st.metric(label="Current Starting Total", value=f"${net_total_savings:,.2f}")
-    with col_res2:
-        final_sim_total = sum(simulated_balances.values())
-        st.metric(label=f"Projected Simulated Balance ({eoy_date.strftime('%b %Y')})", value=f"${final_sim_total:,.2f}",
-                  delta=f"${(final_sim_total - net_total_savings):+,.2f} net delta variation")
-
-    st.markdown("#### 🎯 Estimated Bucket Endpoints Table")
-    
-    table_rows = []
-    for b_name in all_buckets:
-        initial_v = unallocated_starting_bal if b_name == "Unallocated Savings" else bucket_balances.get(b_name, 0.0)
-        final_v = simulated_balances.get(b_name, 0.0)
-        target_v = st.session_state.bucket_targets.get(b_name, 0.0) if b_name != "Unallocated Savings" else 0.0
+    if simulation_snapshots:
+        # Convert our dictionaries into a DataFrame
+        chart_df = pd.DataFrame(simulation_snapshots)
         
-        status_flag = "💪 Growing Stable"
-        if final_v < initial_v:
-            status_flag = "⚠️ Net Drop via Expenditures"
-        if target_v > 0 and final_v >= target_v:
-            status_flag = "✨ Goal Cap Met!"
-
-        table_rows.append({
-            "Savings Allocation Track": b_name,
-            "Live Current Balance": f"${initial_v:,.2f}",
-            "Projected Target Value": f"${final_v:,.2f}",
-            "Delta Shift": f"${(final_v - initial_v):+,.2f}",
-            "Simulation Milestone Status": status_flag
-        })
+        # Set the Date as the index so Streamlit knows it's the X-axis
+        chart_df.set_index("Date", inplace=True)
         
-    st.table(pd.DataFrame(table_rows))
-
-    # Optional detailed historical logs audit drop panel container
-    with st.expander("🔍 View Chronological Ledger Simulation Steps"):
-        log_df = pd.DataFrame(simulation_snapshots)
-        if not log_df.empty:
-            log_df["Date"] = log_df["Date"].apply(lambda d: d.strftime("%Y-%m-%d"))
-            st.dataframe(log_df, use_container_width=True, hide_index=True)
+        # Render a smooth multi-line chart
+        st.line_chart(chart_df, use_container_width=True)
+    else:
+        st.info("No future transactions or paydays were identified inside the 24-month range.")
