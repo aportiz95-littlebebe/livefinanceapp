@@ -501,7 +501,6 @@ def render_projection_dashboard():
     st.markdown("### 🗓️ Step 1: Set Simulation Horizon")
     st.caption("Expand or shrink your timeline to see short-term impacts or long-term growth.")
     
-    # We bring back the dynamic input, capped at 10 years (120 months) for server safety
     simulation_months = st.number_input(
         "Months to project into the future:", 
         min_value=1, 
@@ -514,6 +513,35 @@ def render_projection_dashboard():
     total_days = int(simulation_months * 30.44)
     eoy_date = today + timedelta(days=total_days)
 
+    # --- 2. LIVE DATA AND CODES PARSING ---
+    interval_days = 7 if st.session_state.pay_frequency == "Weekly" else (30 if st.session_state.pay_frequency == "Monthly" else 14)
+    base_income = st.session_state.get("base_pay", 0.0)
+    savings_target_pool = base_income * (st.session_state.pct_split_savings / 100.0)
+
+    bucket_balances, allocated_total, unassigned_pct, _ = calculate_bucket_balances(st.session_state.bucket_config, st.session_state.savings_ledger)
+    df_sav = st.session_state.savings_ledger.copy() if st.session_state.savings_ledger is not None else pd.DataFrame()
+    tracking_start = st.session_state.get('tracking_start_date', today)
+
+    if not df_sav.empty:
+        df_sav['Date'] = pd.to_datetime(df_sav['Date']).dt.date
+        manual_deposits_total = df_sav[(df_sav["Type"] != "Payday Split") & (df_sav["Date"] > tracking_start)]["Amount"].sum()
+        forward_payday_auto = df_sav[(df_sav["Type"] == "Payday Split") & (df_sav["Date"] > tracking_start)]["Amount"].sum()
+    else:
+        manual_deposits_total, forward_payday_auto = 0.0, 0.0
+
+    net_total_savings = st.session_state.starting_savings_balance + forward_payday_auto + manual_deposits_total
+    unallocated_starting_bal = net_total_savings - allocated_total
+
+    all_buckets = ["Unallocated Savings"] + list(st.session_state.bucket_config.keys())
+    all_buckets = list(dict.fromkeys(all_buckets))
+
+    simulated_balances = {}
+    for b_name in all_buckets:
+        if b_name == "Unallocated Savings":
+            simulated_balances[b_name] = unallocated_starting_bal
+        else:
+            simulated_balances[b_name] = bucket_balances.get(b_name, 0.0)
+
     # --- 1.5 WHAT-IF SCENARIO ADJUSTMENTS ---
     st.markdown("---")
     st.markdown("### 🎛️ Step 2: What-If Scenario Adjustments")
@@ -523,19 +551,16 @@ def render_projection_dashboard():
     total_sim_pct = 0.0
 
     if st.session_state.bucket_config:
-        # Create a neat 3-column grid for however many buckets you have
         pct_cols = st.columns(3)
         for idx, (b_name, b_data) in enumerate(st.session_state.bucket_config.items()):
             current_pct = float(b_data.get("pct", 0.0))
             with pct_cols[idx % 3]:
-                # Generate a safe, temporary input for each bucket
                 new_pct = st.number_input(f"{b_name} (%)", min_value=0.0, max_value=100.0, value=current_pct, step=1.0, key=f"sim_pct_{b_name}")
                 sim_percentages[b_name] = new_pct
                 total_sim_pct += new_pct
                 
     sim_unassigned_pct = max(0.0, 100.0 - total_sim_pct)
 
-    # Safety Lock: Prevent the chart from trying to calculate physically impossible money
     if total_sim_pct > 100.0:
         st.error(f"⚠️ Your allocation totals {total_sim_pct}%. It must be exactly 100% or less to simulate accurately.")
         st.stop()
@@ -559,7 +584,6 @@ def render_projection_dashboard():
     with evt_col3:
         evt_amt = st.number_input("Amount ($)", min_value=0.0, step=100.0, format="%.2f", key="proj_evt_amt")
     with evt_col4:
-        # Pulling the max months directly from whatever horizon you set in Step 1
         months_out = st.number_input("Months Out", min_value=1, max_value=int(simulation_months), value=1, step=1, key="proj_evt_months")
 
     add_btn_col, reset_btn_col = st.columns([1, 1])
@@ -612,7 +636,6 @@ def render_projection_dashboard():
             total_spillover = 0.0
 
             for b_name, b_data in st.session_state.bucket_config.items():
-                # INJECTION: Uses your temporary sliders instead of the database!
                 b_pct = sim_percentages.get(b_name, float(b_data.get("pct", 0.0)))
                 b_overflow = bool(b_data.get("overflow", False))
                 b_target = st.session_state.bucket_targets.get(b_name, 0.0)
@@ -628,7 +651,6 @@ def render_projection_dashboard():
                     if b_name in simulated_balances:
                         simulated_balances[b_name] += actual_dep
 
-            # INJECTION: Routes the leftover based on the simulated remainder
             unassigned_dep = base_pool * (sim_unassigned_pct / 100.0) + total_spillover
             simulated_balances["Unallocated Savings"] += unassigned_dep
 
@@ -657,4 +679,3 @@ def render_projection_dashboard():
         st.line_chart(chart_df, use_container_width=True)
     else:
         st.info("No future transactions or paydays were identified inside the selected range.")
-        st.info("No future transactions or paydays were identified inside the 24-month range.")
