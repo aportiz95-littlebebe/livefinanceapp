@@ -678,6 +678,24 @@ def render_projection_dashboard():
     if simulation_snapshots:
         chart_df = pd.DataFrame(simulation_snapshots)
         chart_df.set_index("Date", inplace=True)
-        st.line_chart(chart_df, use_container_width=True)
+        
+        # Extract all the bucket names (columns) from our dataframe
+        available_buckets = chart_df.columns.tolist()
+        
+        # Add a multiselect widget, defaulting to showing everything
+        st.markdown("#### 📊 Filter Chart View")
+        selected_buckets = st.multiselect(
+            "Select which buckets to display on the graph:",
+            options=available_buckets,
+            default=available_buckets,
+            key="proj_chart_filter_multiselect"
+        )
+        
+        # Only render the chart if at least one item is selected
+        if selected_buckets:
+            filtered_df = chart_df[selected_buckets]
+            st.line_chart(filtered_df, use_container_width=True)
+        else:
+            st.warning("Please select at least one bucket from the dropdown above to view the chart.")
     else:
         st.info("No future transactions or paydays were identified inside the selected range.")
