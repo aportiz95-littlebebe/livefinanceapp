@@ -485,7 +485,6 @@ def render_savings_dashboard():
                 
             st.markdown("---")
 def render_projection_dashboard():
-    # Split the header to put the button on the right side
     head_col1, head_col2 = st.columns([3.5, 1])
     with head_col1:
         st.subheader("🔮 Granular Bucket & Cash Flow Projections")
@@ -497,23 +496,7 @@ def render_projection_dashboard():
 
     today = datetime.now().date()
     
-    # --- 1. DYNAMIC HORIZON GENERATION ---
-    st.markdown("### 🗓️ Step 1: Set Simulation Horizon")
-    st.caption("Expand or shrink your timeline to see short-term impacts or long-term growth.")
-    
-    simulation_months = st.number_input(
-        "Months to project into the future:", 
-        min_value=1, 
-        max_value=120, 
-        value=24, 
-        step=6, 
-        key="proj_horizon_chart_months"
-    )
-    
-    total_days = int(simulation_months * 30.44)
-    eoy_date = today + timedelta(days=total_days)
-
-    # --- 2. LIVE DATA AND CODES PARSING ---
+    # --- LIVE DATA PARSING (Moved up so the UI can use it) ---
     interval_days = 7 if st.session_state.pay_frequency == "Weekly" else (30 if st.session_state.pay_frequency == "Monthly" else 14)
     base_income = st.session_state.get("base_pay", 0.0)
     savings_target_pool = base_income * (st.session_state.pct_split_savings / 100.0)
@@ -542,74 +525,98 @@ def render_projection_dashboard():
         else:
             simulated_balances[b_name] = bucket_balances.get(b_name, 0.0)
 
-    # --- 1.5 WHAT-IF SCENARIO ADJUSTMENTS ---
     st.markdown("---")
-    st.markdown("### 🎛️ Step 2: What-If Scenario Adjustments")
-    st.caption("Temporarily tweak your deposit percentages below. These changes will NOT save to your main budget—they only affect this chart!")
 
-    sim_percentages = {}
-    total_sim_pct = 0.0
+    # --- TOP ROW: INPUTS SIDE-BY-SIDE ---
+    left_col, right_col = st.columns(2, gap="large")
 
-    if st.session_state.bucket_config:
-        pct_cols = st.columns(3)
-        for idx, (b_name, b_data) in enumerate(st.session_state.bucket_config.items()):
-            current_pct = float(b_data.get("pct", 0.0))
-            with pct_cols[idx % 3]:
-                new_pct = st.number_input(f"{b_name} (%)", min_value=0.0, max_value=100.0, value=current_pct, step=1.0, key=f"sim_pct_{b_name}")
-                sim_percentages[b_name] = new_pct
-                total_sim_pct += new_pct
-                
-    sim_unassigned_pct = max(0.0, 100.0 - total_sim_pct)
+    with left_col:
+        st.markdown("### 🎛️ Step 1: Scenario Adjustments")
+        st.caption("Temporarily tweak your deposit percentages below. These changes will NOT save to your main budget.")
 
-    if total_sim_pct > 100.0:
-        st.error(f"⚠️ Your allocation totals {total_sim_pct}%. It must be exactly 100% or less to simulate accurately.")
-        st.stop()
-    else:
-        st.success(f"Remaining **{sim_unassigned_pct:.1f}%** of the savings pool will flow into Unallocated Savings.")
+        sim_percentages = {}
+        total_sim_pct = 0.0
+
+        if st.session_state.bucket_config:
+            # Shifted to 2 columns so it fits nicely inside the left panel
+            pct_cols = st.columns(2)
+            for idx, (b_name, b_data) in enumerate(st.session_state.bucket_config.items()):
+                current_pct = float(b_data.get("pct", 0.0))
+                with pct_cols[idx % 2]:
+                    new_pct = st.number_input(f"{b_name} (%)", min_value=0.0, max_value=100.0, value=current_pct, step=1.0, key=f"sim_pct_{b_name}")
+                    sim_percentages[b_name] = new_pct
+                    total_sim_pct += new_pct
+                    
+        sim_unassigned_pct = max(0.0, 100.0 - total_sim_pct)
+
+        if total_sim_pct > 100.0:
+            st.error(f"⚠️ Your allocation totals {total_sim_pct}%. It must be exactly 100% or less to simulate accurately.")
+            st.stop()
+        else:
+            st.success(f"Remaining **{sim_unassigned_pct:.1f}%** will flow into Unallocated Savings.")
 
 
-    # --- 3. INTERACTIVE SIMULATION OVERLAYS ---
-    st.markdown("---")
-    st.markdown("### 🛠️ Step 3: Schedule Future Events")
-    st.caption("Plan a withdrawal (like tuition or a vacation) and watch the chart react to see how long recovery takes.")
+    with right_col:
+        st.markdown("### 🛠️ Step 2: Schedule Future Events")
+        st.caption("Plan a withdrawal (e.g. tuition, vacation) and watch the chart react.")
 
-    if "projection_events" not in st.session_state:
-        st.session_state.projection_events = []
-
-    evt_col1, evt_col2, evt_col3, evt_col4 = st.columns([1.5, 1.2, 1.2, 1.0])
-    with evt_col1:
-        chosen_b = st.selectbox("Select Target Bucket", all_buckets, key="proj_evt_bucket")
-    with evt_col2:
-        evt_type = st.selectbox("Action Type", ["One-Time Withdrawal", "One-Time Inflow / Deposit"], key="proj_evt_type")
-    with evt_col3:
-        evt_amt = st.number_input("Amount ($)", min_value=0.0, step=100.0, format="%.2f", key="proj_evt_amt")
-    with evt_col4:
-        months_out = st.number_input("Months Out", min_value=1, max_value=int(simulation_months), value=1, step=1, key="proj_evt_months")
-
-    add_btn_col, reset_btn_col = st.columns([1, 1])
-    with add_btn_col:
-        if st.button("➕ Add Event to Schedule", use_container_width=True):
-            if evt_amt > 0:
-                target_date = today + timedelta(days=int(months_out * 30.44))
-                st.session_state.projection_events.append({
-                    "Bucket": chosen_b,
-                    "Type": evt_type,
-                    "Amount": evt_amt,
-                    "Target Date": target_date
-                })
-                st.rerun()
-                
-    with reset_btn_col:
-        if st.button("🔄 Reset Schedule", use_container_width=True):
+        if "projection_events" not in st.session_state:
             st.session_state.projection_events = []
-            st.rerun()
 
-    if st.session_state.projection_events:
-        for idx, item in enumerate(st.session_state.projection_events):
-            act_label = "Deducting" if "Withdrawal" in item["Type"] else "Injecting"
-            st.info(f"⏳ **{item['Target Date'].strftime('%B %Y')}**: {act_label} **${item['Amount']:,.2f}** from **{item['Bucket']}**", icon="📆")
+        # Reorganized into a 2x2 grid for better side-by-side formatting
+        evt_row1_col1, evt_row1_col2 = st.columns(2)
+        with evt_row1_col1:
+            chosen_b = st.selectbox("Target Bucket", all_buckets, key="proj_evt_bucket")
+        with evt_row1_col2:
+            evt_type = st.selectbox("Action Type", ["One-Time Withdrawal", "One-Time Inflow / Deposit"], key="proj_evt_type")
+            
+        evt_row2_col1, evt_row2_col2 = st.columns(2)
+        with evt_row2_col1:
+            evt_amt = st.number_input("Amount ($)", min_value=0.0, step=100.0, format="%.2f", key="proj_evt_amt")
+        with evt_row2_col2:
+            # Locked to the absolute 10-year max since the timeline horizon is decided at the bottom now
+            months_out = st.number_input("Months Out", min_value=1, max_value=120, value=1, step=1, key="proj_evt_months")
 
-    # --- 4. EXECUTE CHRONOLOGICAL ROLLING SIMULATION ---
+        add_btn_col, reset_btn_col = st.columns([1, 1])
+        with add_btn_col:
+            if st.button("➕ Add Event", use_container_width=True):
+                if evt_amt > 0:
+                    target_date = today + timedelta(days=int(months_out * 30.44))
+                    st.session_state.projection_events.append({
+                        "Bucket": chosen_b,
+                        "Type": evt_type,
+                        "Amount": evt_amt,
+                        "Target Date": target_date
+                    })
+                    st.rerun()
+                    
+        with reset_btn_col:
+            if st.button("🔄 Reset Schedule", use_container_width=True):
+                st.session_state.projection_events = []
+                st.rerun()
+
+        if st.session_state.projection_events:
+            for idx, item in enumerate(st.session_state.projection_events):
+                act_label = "Deducting" if "Withdrawal" in item["Type"] else "Injecting"
+                st.info(f"⏳ **{item['Target Date'].strftime('%B %Y')}**: {act_label} **${item['Amount']:,.2f}** from **{item['Bucket']}**", icon="📆")
+
+    # --- BOTTOM SECTION: HORIZON & CHART ---
+    st.markdown("---")
+    st.markdown("### 🗓️ Step 3: Set Horizon & View Results")
+    
+    simulation_months = st.number_input(
+        "Months to project into the future:", 
+        min_value=1, 
+        max_value=120, 
+        value=24, 
+        step=6, 
+        key="proj_horizon_chart_months"
+    )
+    
+    total_days = int(simulation_months * 30.44)
+    eoy_date = today + timedelta(days=total_days)
+
+    # --- EXECUTE CHRONOLOGICAL ROLLING SIMULATION ---
     projected_paydays = project_payday_cadence(st.session_state.first_payday, st.session_state.pay_frequency, eoy_date.year + 1)
     future_paydays = sorted([payday for payday in projected_paydays if today <= payday <= eoy_date])
 
@@ -668,10 +675,6 @@ def render_projection_dashboard():
         for b_name, b_val in simulated_balances.items():
             snapshot[b_name] = b_val
         simulation_snapshots.append(snapshot)
-
-    # --- 5. RENDER SIMULATION FORECAST RESULTS ---
-    st.markdown("---")
-    st.markdown("### 📈 Projection Timeline")
 
     if simulation_snapshots:
         chart_df = pd.DataFrame(simulation_snapshots)
