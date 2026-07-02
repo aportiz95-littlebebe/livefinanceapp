@@ -323,3 +323,46 @@ def render_savings_account_modal():
         push_config_to_google()
         st.session_state.force_refresh = True
         st.rerun()
+
+@st.dialog("🧮 Projection Math Engine", width="large")
+def render_projection_math_modal():
+    st.markdown("### How the Simulator Works")
+    st.write("The projection engine predicts your future balances by chronologically stepping through time, applying your exact payday rules alongside any custom scheduled events.")
+    
+    st.markdown("---")
+    st.markdown("#### 1. Establishing the Timeline")
+    st.markdown("- **Future Paydays:** The app identifies every recurring payday between today and your chosen horizon based on your **First Payday** and **Pay Frequency** settings.")
+    st.markdown("- **Scheduled Events:** Any one-time withdrawals or deposits you add in the designer are mapped to their specific target dates.")
+    st.markdown("- **Chronological Sorting:** The app merges paydays and scheduled events into a single timeline and processes them one by one, day by day.")
+    
+    st.markdown("---")
+    st.markdown("#### 2. Payday Distribution Logic (Live Example)")
+    base_pay = st.session_state.get("base_pay", 0.0)
+    sav_pct = st.session_state.get("pct_split_savings", 0.0)
+    total_pool = base_pay * (sav_pct / 100.0)
+    
+    st.info(f"**Your Current Baseline:** Base Pay (**${base_pay:,.2f}**) × Savings Allocation (**{sav_pct}%**) = **${total_pool:,.2f}** distributed per payday.")
+    
+    st.write("When the simulator hits a scheduled **Payday**, it divides that pool based on your Bucket configurations:")
+    
+    # Calculate live split examples
+    unassigned_pct = 100.0
+    for b_name, b_data in st.session_state.get("bucket_config", {}).items():
+        b_pct = float(b_data.get("pct", 0.0))
+        b_overflow = bool(b_data.get("overflow", False))
+        b_amt = total_pool * (b_pct / 100.0)
+        unassigned_pct -= b_pct
+        
+        overflow_text = "*(Spillover ON: Excess routed to Unallocated if cap is hit)*" if b_overflow else ""
+        st.markdown(f"- **{b_name} ({b_pct}%):** Receives **${b_amt:,.2f}** {overflow_text}")
+        
+    unassigned_pct = max(0.0, unassigned_pct)
+    unassigned_amt = total_pool * (unassigned_pct / 100.0)
+    st.markdown(f"- **Unallocated Savings ({unassigned_pct}%):** Receives **${unassigned_amt:,.2f}** *(Plus any captured spillover from capped buckets)*")
+
+    st.markdown("---")
+    st.markdown("#### 3. Execution & Snapshotting")
+    st.write("As the timeline moves forward, the simulator calculates the new balance for every bucket on every action date. The final numbers you see in the results table represent the absolute final snapshot at the very end of your chosen time horizon.")
+    
+    if st.button("Close Window", use_container_width=True):
+        st.rerun()
