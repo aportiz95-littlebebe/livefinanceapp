@@ -16,7 +16,6 @@ def render_unified_income_splits_modal():
     frequency_opts = ["Weekly", "Bi-weekly", "Monthly"]
     chosen_freq = st.selectbox("Pay Frequency:", frequency_opts, index=frequency_opts.index(st.session_state.get("pay_frequency", "Bi-weekly")))
     
-    # RE-INTRODUCED FIXED BASE PAY FIELD
     val_base_pay = st.number_input("Current Base Pay ($):", min_value=0.0, value=float(st.session_state.get("base_pay", 0.0)), step=100.0, format="%.2f")
 
     st.markdown("---")
@@ -26,18 +25,34 @@ def render_unified_income_splits_modal():
     val_savings = st.number_input("Savings %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_savings), key="val_savings_input")
 
     st.markdown("---")
-    if (val_needs + val_wants + val_savings == 100.0) or (val_needs == 0 and val_wants == 0 and val_savings == 0):
-        if st.button("💾 Save Changes", use_container_width=True, key="btn_final_save_v1"):
-            st.session_state.first_payday = chosen_first_payday
-            st.session_state.pay_frequency = chosen_freq
-            st.session_state.base_pay = val_base_pay
-            st.session_state.pct_split_needs = val_needs
-            st.session_state.pct_split_wants = val_wants
-            st.session_state.pct_split_savings = val_savings
-            
-            push_config_to_google()
-            st.session_state.force_refresh = True
-            st.rerun()
+    
+    # --- NEW UX VALIDATION LOGIC ---
+    total_budget_pct = val_needs + val_wants + val_savings
+    
+    if total_budget_pct == 100.0 or total_budget_pct == 0.0:
+        if total_budget_pct == 0.0:
+            st.info("⚖️ **Empty Baseline:** Your budget allocations are currently set to 0%.")
+        else:
+            st.success("✨ **Perfectly Balanced:** Your budget allocates exactly 100% of your income.")
+        btn_disabled = False
+    elif total_budget_pct < 100.0:
+        st.warning(f"⚠️ **Under-Allocated:** You have assigned {total_budget_pct:.1f}%. You still have **{100.0 - total_budget_pct:.1f}%** left to allocate to reach 100%.")
+        btn_disabled = True
+    else:
+        st.error(f"❌ **Over-Allocated!** You have assigned {total_budget_pct:.1f}%. You must reduce this by **{total_budget_pct - 100.0:.1f}%** to proceed.")
+        btn_disabled = True
+
+    if st.button("💾 Save Changes", use_container_width=True, key="btn_final_save_v1", disabled=btn_disabled):
+        st.session_state.first_payday = chosen_first_payday
+        st.session_state.pay_frequency = chosen_freq
+        st.session_state.base_pay = val_base_pay
+        st.session_state.pct_split_needs = val_needs
+        st.session_state.pct_split_wants = val_wants
+        st.session_state.pct_split_savings = val_savings
+        
+        push_config_to_google()
+        st.session_state.force_refresh = True
+        st.rerun()
     else:
         st.error("❌ Budget Allocation percentages must sum up to exactly 100%.")
 
