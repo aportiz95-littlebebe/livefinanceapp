@@ -337,9 +337,23 @@ def render_projection_math_modal():
     
     st.markdown("---")
     st.markdown("#### 2. Payday Distribution Logic (Live Example)")
-    base_pay = st.session_state.get("base_pay", 0.0)
-    sav_pct = st.session_state.get("pct_split_savings", 0.0)
+    
+    # --- ADD SAFETY FLOATS HERE TO STRIP OUT THE GLITCHED STRINGS ---
+    try:
+        base_pay = float(st.session_state.get("base_pay", 0.0))
+    except Exception:
+        base_pay = 0.0
+        
+    try:
+        # This forces the app to read ONLY a clean number, dropping the ghost text
+        sav_pct = float(st.session_state.get("pct_split_savings", 0.0))
+    except Exception:
+        sav_pct = 0.0
+        
     total_pool = base_pay * (sav_pct / 100.0)
+    
+    # This line will now be perfectly clean
+    st.info(f"**Your Current Baseline:** Base Pay (**${base_pay:,.2f}**) × Savings Allocation (**{sav_pct}%**) = **${total_pool:,.2f}** distributed per payday.")
     
     # Cleaned up mathematical string formatting to prevent font rendering glitches
     st.info(f"**Your Current Baseline:** Base Pay (**${base_pay:,.2f}**) × Savings Allocation (**{sav_pct}%**) = **${total_pool:,.2f}** distributed per payday.")
