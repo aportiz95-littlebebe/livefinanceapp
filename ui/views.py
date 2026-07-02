@@ -503,8 +503,9 @@ def render_projection_dashboard():
         key="proj_horizon_months"
     )
     
-    eoy_date = today + timedelta(days=int(simulation_months * 30.44))
-    st.info(f"Simulation active horizon runs from **Today** through **{eoy_date.strftime('%B %d, %Y')}**.")
+    # Calculate the total days as an integer first
+    total_days = int(simulation_months * 30.44)
+    eoy_date = today + timedelta(days=total_days)
 
     # --- 2. LIVE DATA AND CODES PARSING ---
     interval_days = 7 if st.session_state.pay_frequency == "Weekly" else (30 if st.session_state.pay_frequency == "Monthly" else 14)
