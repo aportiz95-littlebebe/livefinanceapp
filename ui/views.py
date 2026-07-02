@@ -489,15 +489,24 @@ def render_projection_dashboard():
     st.caption("Simulate bucket-specific changes over time, including upcoming planned expenditures and subsequent payday recovery splits.")
 
     today = datetime.now().date()
-    eoy_date = date(today.year, 12, 31)
-    days_left = (eoy_date - today).days
+    
+    # --- 1. DYNAMIC HORIZON GENERATION ---
+    st.markdown("### 🗓️ Step 1: Set Simulation Horizon")
+    
+    # Allow the user to project as far out as they want instead of a fixed 12-month limit
+    simulation_months = st.number_input(
+        "How many months into the future do you want to project?", 
+        min_value=1, 
+        max_value=120, # Up to 10 years
+        value=12, 
+        step=1, 
+        key="proj_horizon_months"
+    )
+    
+    eoy_date = today + timedelta(days=int(simulation_months * 30.44))
+    st.info(f"Simulation active horizon runs from **Today** through **{eoy_date.strftime('%B %d, %Y')}**.")
 
-    if days_left <= 0:
-        st.warning("Calculations are shifting layout targets forward to next year's projection timeline.")
-        eoy_date = date(today.year + 1, 12, 31)
-        days_left = (eoy_date - today).days
-
-    # --- 1. LIVE DATA AND CODES PARSING ---
+    # --- 2. LIVE DATA AND CODES PARSING ---
     interval_days = 7 if st.session_state.pay_frequency == "Weekly" else (30 if st.session_state.pay_frequency == "Monthly" else 14)
     base_income = st.session_state.get("base_pay", 0.0)
     savings_target_pool = base_income * (st.session_state.pct_split_savings / 100.0)
@@ -529,9 +538,10 @@ def render_projection_dashboard():
         else:
             simulated_balances[b_name] = bucket_balances.get(b_name, 0.0)
 
-    # --- 2. INTERACTIVE SIMULATION OVERLAYS ---
-    st.markdown("### 🛠️ Step 1: Design Scheduled Events")
-    st.caption("Plan single or recurring changes (e.g., a Tuition Withdrawal in 2 months) to see how buckets recover over time.")
+    # --- 3. INTERACTIVE SIMULATION OVERLAYS ---
+    st.markdown("---")
+    st.markdown("### 🛠️ Step 2: Design Scheduled Events")
+    st.caption("Plan single or recurring changes (e.g., a Tuition Withdrawal) to see how buckets recover over time.")
 
     # Generate a dynamic event planner grid state via session cache
     if "projection_events" not in st.session_state:
@@ -545,33 +555,40 @@ def render_projection_dashboard():
     with evt_col3:
         evt_amt = st.number_input("Amount ($)", min_value=0.0, step=100.0, format="%.2f", key="proj_evt_amt")
     with evt_col4:
-        # Simple projection horizon limit options
-        months_out = st.selectbox("Timeline Horizon", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], format_func=lambda x: f"In {x} Months", key="proj_evt_months")
+        # Changed from selectbox to numerical input tracking up to total configured horizon boundary
+        months_out = st.number_input("Months Out", min_value=1, max_value=int(simulation_months), value=1, step=1, key="proj_evt_months")
 
-    if st.button("➕ Add Event to Simulation Schedule", use_container_width=True):
-        if evt_amt > 0:
-            target_date = today + timedelta(days=months_out * 30.44)
-            st.session_state.projection_events.append({
-                "Bucket": chosen_b,
-                "Type": evt_type,
-                "Amount": evt_amt,
-                "Target Date": target_date
-            })
-            st.toast("Simulated schedule item pinned!", icon="📌")
+    add_btn_col, reset_btn_col = st.columns([1, 1])
+    with add_btn_col:
+        if st.button("➕ Add Event to Schedule", use_container_width=True):
+            if evt_amt > 0:
+                target_date = today + timedelta(days=int(months_out * 30.44))
+                st.session_state.projection_events.append({
+                    "Bucket": chosen_b,
+                    "Type": evt_type,
+                    "Amount": evt_amt,
+                    "Target Date": target_date
+                })
+                st.toast("Simulated schedule item pinned!", icon="📌")
+                st.rerun()
+                
+    with reset_btn_col:
+        # NEW CLEAR / RESET BUTTON CONTEXT EXECUTOR
+        if st.button("🔄 Reset All Simulated Variations", use_container_width=True):
+            st.session_state.projection_events = []
+            st.toast("Simulation cache cleared back to clean baseline state!", icon="🧼")
+            st.rerun()
 
     # Display actively tracked scenario items
     if st.session_state.projection_events:
         st.markdown("##### 📌 Scheduled Simulation Modifiers")
         for idx, item in enumerate(st.session_state.projection_events):
             act_label = "Deducting" if "Withdrawal" in item["Type"] else "Injecting"
-            st.info(f"⏳ **{item['Target Date'].strftime('%B %Y')}**: {act_label} **${item['Amount']:,.2f}** from **{item['Bucket']}** "
-                    f"| [❌ Remove Item](javascript:void(0);)", icon="📆")
-        if st.button("🗑️ Clear All Scenario Events"):
-            st.session_state.projection_events = []
-            st.rerun()
+            st.info(f"⏳ **{item['Target Date'].strftime('%B %Y')}**: {act_label} **${item['Amount']:,.2f}** from **{item['Bucket']}**", icon="📆")
 
-    # --- 3. EXECUTE CHRONOLOGICAL ROLLING SIMULATION ---
-    projected_paydays = project_payday_cadence(st.session_state.first_payday, st.session_state.pay_frequency, today.year)
+    # --- 4. EXECUTE CHRONOLOGICAL ROLLING SIMULATION ---
+    # Projection cadence calculator handles long-range parameters using year thresholds
+    projected_paydays = project_payday_cadence(st.session_state.first_payday, st.session_state.pay_frequency, eoy_date.year)
     future_paydays = sorted([pd for pd in projected_paydays if today <= pd <= eoy_date])
 
     # Blend paydays and user scheduled simulation events chronologically
@@ -579,7 +596,9 @@ def render_projection_dashboard():
     for payday in future_paydays:
         timeline_queue.append({"Date": payday, "Type": "PAYDAY", "Meta": None})
     for evt in st.session_state.projection_events:
-        timeline_queue.append({"Date": evt["Target Date"], "Type": "USER_EVENT", "Meta": evt})
+        # Ensure event doesn't trigger past our updated dynamic timeline boundary
+        if evt["Target Date"] <= eoy_date:
+            timeline_queue.append({"Date": evt["Target Date"], "Type": "USER_EVENT", "Meta": evt})
 
     timeline_queue = sorted(timeline_queue, key=lambda x: x["Date"])
 
@@ -631,12 +650,12 @@ def render_projection_dashboard():
             snapshot[b_name] = b_val
         simulation_snapshots.append(snapshot)
 
-    # --- 4. RENDER SIMULATION FORECAST RESULTS ---
+    # --- 5. RENDER SIMULATION FORECAST RESULTS ---
     st.markdown("---")
-    st.markdown("### 📊 Step 2: Simulation Outcome Analysis")
+    st.markdown("### 📊 Step 3: Simulation Outcome Analysis")
 
     if not simulation_snapshots:
-        st.info("No paydays or schedule items remaining in the active calendar horizon year scope.")
+        st.info("No future transactions or paydays were identified inside your chosen time range selection criteria.")
         return
 
     # Comparison metrics summary block
@@ -645,7 +664,7 @@ def render_projection_dashboard():
         st.metric(label="Current Starting Total", value=f"${net_total_savings:,.2f}")
     with col_res2:
         final_sim_total = sum(simulated_balances.values())
-        st.metric(label="Projected End-of-Year Simulated Balance", value=f"${final_sim_total:,.2f}",
+        st.metric(label=f"Projected Simulated Balance ({eoy_date.strftime('%b %Y')})", value=f"${final_sim_total:,.2f}",
                   delta=f"${(final_sim_total - net_total_savings):+,.2f} net delta variation")
 
     st.markdown("#### 🎯 Estimated Bucket Endpoints Table")
@@ -665,7 +684,7 @@ def render_projection_dashboard():
         table_rows.append({
             "Savings Allocation Track": b_name,
             "Live Current Balance": f"${initial_v:,.2f}",
-            "Projected Year-End Value": f"${final_v:,.2f}",
+            "Projected Target Value": f"${final_v:,.2f}",
             "Delta Shift": f"${(final_v - initial_v):+,.2f}",
             "Simulation Milestone Status": status_flag
         })
