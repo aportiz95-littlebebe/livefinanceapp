@@ -282,11 +282,27 @@ def render_combined_envelopes_modal():
     is_any_unbacked_editing = any(st.session_state.get(f"edit_unbk_{i}", False) for i in range(len(custom_unbacked_goals)))
     add_unbk_col, _ = st.columns([2.5, 5.5])
     with add_unbk_col: st.button("Add Custom Goal", use_container_width=True, on_click=add_standalone_goal, disabled=is_any_unbacked_editing)
+    
+    # --- NEW: ALLOCATION STATUS & VALIDATION CHECK ---
     st.markdown("---")
     
+    # Dynamically sum all current percentages in the temporary dictionary
+    total_assigned_pct = sum(float(b.get("pct", 0.0)) for b in st.session_state.temp_bucket_config.values())
+    unassigned_pct = 100.0 - total_assigned_pct
+    
+    if total_assigned_pct > 100.0:
+        st.error(f"❌ **Over-Allocated!** You have assigned **{total_assigned_pct:.1f}%** of your savings pool. You must reduce this by **{total_assigned_pct - 100.0:.1f}%** before saving.")
+        pct_valid = False
+    else:
+        st.info(f"⚖️ **Allocation Balance:** **{total_assigned_pct:.1f}%** is currently assigned to custom buckets. The remaining **{unassigned_pct:.1f}%** will naturally route to Unallocated Savings.")
+        pct_valid = True
+        
     is_any_row_editing = is_any_bucket_editing or is_any_unbacked_editing
     is_typing_anything = bool(st.session_state.get("new_b_name", "").strip()) or bool(st.session_state.get("new_unbacked_name", "").strip())
-    lock_sync_button = is_any_row_editing or is_typing_anything
+    
+    # The 'pct_valid' flag is added to the lock to enforce the 100% rule
+    lock_sync_button = is_any_row_editing or is_typing_anything or not pct_valid
+    
     _, save_col = st.columns([6, 2])
     with save_col:
         if st.button("🔄 Save Changes", use_container_width=True, disabled=lock_sync_button): 
