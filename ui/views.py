@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import calendar
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from data.state import push_df_to_google
 from core.calculations import (
     get_period_dates, 
@@ -590,7 +590,7 @@ def render_projection_dashboard():
     # --- 4. EXECUTE CHRONOLOGICAL ROLLING SIMULATION ---
     # Projection cadence calculator handles long-range parameters using year thresholds
     projected_paydays = project_payday_cadence(st.session_state.first_payday, st.session_state.pay_frequency, eoy_date.year)
-    future_paydays = sorted([pd for pd in projected_paydays if today <= pd <= eoy_date])
+    future_paydays = sorted([payday for payday in projected_paydays if today <= payday <= eoy_date])
 
     # Blend paydays and user scheduled simulation events chronologically
     timeline_queue = []
