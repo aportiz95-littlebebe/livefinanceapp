@@ -485,8 +485,15 @@ def render_savings_dashboard():
                 
             st.markdown("---")
 def render_projection_dashboard():
-    st.subheader("🔮 Granular Bucket & Cash Flow Projections")
-    st.caption("Simulate bucket-specific changes over time, including upcoming planned expenditures and subsequent payday recovery splits.")
+    # Split the header to put the button on the right side
+    head_col1, head_col2 = st.columns([3.5, 1])
+    with head_col1:
+        st.subheader("🔮 Granular Bucket & Cash Flow Projections")
+        st.caption("Simulate bucket-specific changes over time, including upcoming planned expenditures and subsequent payday recovery splits.")
+    with head_col2:
+        if st.button("🧮 View the Math", use_container_width=True):
+            st.session_state.show_proj_math_modal = True
+            st.rerun()
 
     today = datetime.now().date()
     
