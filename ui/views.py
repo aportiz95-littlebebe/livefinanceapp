@@ -563,7 +563,6 @@ def render_projection_dashboard():
         if "projection_events" not in st.session_state:
             st.session_state.projection_events = []
 
-        # Reorganized into a 2x2 grid for better side-by-side formatting
         evt_row1_col1, evt_row1_col2 = st.columns(2)
         with evt_row1_col1:
             chosen_b = st.selectbox("Target Bucket", all_buckets, key="proj_evt_bucket")
@@ -574,19 +573,18 @@ def render_projection_dashboard():
         with evt_row2_col1:
             evt_amt = st.number_input("Amount ($)", min_value=0.0, step=100.0, format="%.2f", key="proj_evt_amt")
         with evt_row2_col2:
-            # Locked to the absolute 10-year max since the timeline horizon is decided at the bottom now
-            months_out = st.number_input("Months Out", min_value=1, max_value=120, value=1, step=1, key="proj_evt_months")
+            # --- SWAPPED: Real interactive date calendar! ---
+            chosen_date = st.date_input("Event Date", value=today, min_value=today, key="proj_evt_date")
 
         add_btn_col, reset_btn_col = st.columns([1, 1])
         with add_btn_col:
             if st.button("➕ Add Event", use_container_width=True):
                 if evt_amt > 0:
-                    target_date = today + timedelta(days=int(months_out * 30.44))
                     st.session_state.projection_events.append({
                         "Bucket": chosen_b,
                         "Type": evt_type,
                         "Amount": evt_amt,
-                        "Target Date": target_date
+                        "Target Date": chosen_date # Pipes the exact date straight to the graph
                     })
                     st.rerun()
                     
@@ -598,7 +596,8 @@ def render_projection_dashboard():
         if st.session_state.projection_events:
             for idx, item in enumerate(st.session_state.projection_events):
                 act_label = "Deducting" if "Withdrawal" in item["Type"] else "Injecting"
-                st.info(f"⏳ **{item['Target Date'].strftime('%B %Y')}**: {act_label} **${item['Amount']:,.2f}** from **{item['Bucket']}**", icon="📆")
+                # Formatted the date display to be fully human-readable (e.g. July 02, 2026)
+                st.info(f"⏳ **{item['Target Date'].strftime('%B %d, %Y')}**: {act_label} **${item['Amount']:,.2f}** from **{item['Bucket']}**", icon="📆")
 
     # --- BOTTOM SECTION: HORIZON & CHART ---
     st.markdown("---")
