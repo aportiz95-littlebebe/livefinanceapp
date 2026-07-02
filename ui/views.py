@@ -487,7 +487,7 @@ def render_savings_dashboard():
 def render_projection_dashboard():
     head_col1, head_col2 = st.columns([3.5, 1])
     with head_col1:
-        st.subheader("🔮 Granular Bucket & Cash Flow Projections")
+        st.subheader("🔮 Savings Bucket & Cash Flow Projections")
         st.caption("Simulate bucket-specific changes over time, including upcoming planned expenditures and subsequent payday recovery splits.")
     with head_col2:
         if st.button("🧮 View the Math", use_container_width=True):
