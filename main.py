@@ -19,7 +19,8 @@ from ui.modals import (
     render_ledger_modal, 
     render_combined_envelopes_modal, 
     render_savings_history_modal,
-    render_savings_account_modal # Ensures the new dialog is imported cleanly
+    render_savings_account_modal,
+    render_projection_math_modal
 )
 
 # --- APP CONFIGURATION ---
@@ -64,7 +65,10 @@ if st.session_state.get('show_sav_history_modal', False):
 if st.session_state.get('show_savings_account_modal', False):
     st.session_state.show_savings_account_modal = False
     render_savings_account_modal()
-
+if st.session_state.get('show_proj_math_modal', False):
+    st.session_state.show_proj_math_modal = False
+    render_projection_math_modal()
+    
 # --- DASHBOARD UI ---
 st.title("📊 My Finance Dashboard")
 st.markdown("---")
