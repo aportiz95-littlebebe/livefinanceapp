@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
+from core.calculations import generate_timeline_dates
 from data.state import push_df_to_google, push_config_to_google
 
 @st.dialog("💰 Edit Income & Budgets", width="small")
@@ -24,9 +25,7 @@ def render_unified_income_splits_modal():
     val_wants = st.number_input("Wants %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_wants), key="val_wants_input")
     val_savings = st.number_input("Savings %:", min_value=0.0, max_value=100.0, value=float(st.session_state.temp_pct_split_savings), key="val_savings_input")
 
-    st.markdown("---")
-    
-    # --- NEW UX VALIDATION LOGIC ---
+    # --- ALLOCATION TRACKER ---
     total_budget_pct = val_needs + val_wants + val_savings
     
     if total_budget_pct == 100.0 or total_budget_pct == 0.0:
@@ -42,6 +41,8 @@ def render_unified_income_splits_modal():
         st.error(f"❌ **Over-Allocated!** You have assigned {total_budget_pct:.1f}%. You must reduce this by **{total_budget_pct - 100.0:.1f}%** to proceed.")
         btn_disabled = True
 
+    st.markdown("---")
+    
     if st.button("💾 Save Changes", use_container_width=True, key="btn_final_save_v1", disabled=btn_disabled):
         st.session_state.first_payday = chosen_first_payday
         st.session_state.pay_frequency = chosen_freq
@@ -53,8 +54,6 @@ def render_unified_income_splits_modal():
         push_config_to_google()
         st.session_state.force_refresh = True
         st.rerun()
-    else:
-        st.error("❌ Budget Allocation percentages must sum up to exactly 100%.")
 
 @st.dialog("📋 Edit My Fixed Monthly Bills", width="large")
 def render_bills_modal():
@@ -170,14 +169,13 @@ def render_category_modal():
 
 @st.dialog("📜 View Transaction History", width="large")
 def render_ledger_modal():
-    # Add a quick hint for the UI so you (and anyone else) remember how to trigger the edit
     st.caption("💡 **Tip:** Double-click any cell to edit its contents. You can also select a row and press Delete/Backspace to remove it.")
     
     edited_expenses_df = st.data_editor(
         st.session_state.expenses, 
         use_container_width=True, 
         num_rows="dynamic",
-        hide_index=True,  # Hides the uneditable row numbers
+        hide_index=True,  
         key="expenses_ledger_grid"
     )
     
@@ -259,6 +257,18 @@ def render_combined_envelopes_modal():
     add_btn_col, _ = st.columns([2.5, 5.5])
     with add_btn_col: st.button("Add New Bucket", use_container_width=True, on_click=add_bucket, disabled=is_any_bucket_editing)
 
+    # --- ALLOCATION TRACKER ---
+    st.write("") 
+    total_assigned_pct = sum(float(b.get("pct", 0.0)) for b in st.session_state.temp_bucket_config.values())
+    unassigned_pct = 100.0 - total_assigned_pct
+    
+    if total_assigned_pct > 100.0:
+        st.error(f"❌ **Over-Allocated!** You have assigned **{total_assigned_pct:.1f}%** of your savings pool. You must reduce this by **{total_assigned_pct - 100.0:.1f}%** before saving.")
+        pct_valid = False
+    else:
+        st.info(f"⚖️ **Allocation Balance:** **{total_assigned_pct:.1f}%** is currently assigned to custom buckets. The remaining **{unassigned_pct:.1f}%** will naturally route to Unallocated Savings.")
+        pct_valid = True
+
     custom_unbacked_goals = [k for k in st.session_state.temp_bucket_targets.keys() if k not in ["Unallocated Savings"] and k not in st.session_state.temp_bucket_config]
     if custom_unbacked_goals:
         st.markdown("---")
@@ -298,24 +308,10 @@ def render_combined_envelopes_modal():
     add_unbk_col, _ = st.columns([2.5, 5.5])
     with add_unbk_col: st.button("Add Custom Goal", use_container_width=True, on_click=add_standalone_goal, disabled=is_any_unbacked_editing)
     
-    # --- NEW: ALLOCATION STATUS & VALIDATION CHECK ---
     st.markdown("---")
-    
-    # Dynamically sum all current percentages in the temporary dictionary
-    total_assigned_pct = sum(float(b.get("pct", 0.0)) for b in st.session_state.temp_bucket_config.values())
-    unassigned_pct = 100.0 - total_assigned_pct
-    
-    if total_assigned_pct > 100.0:
-        st.error(f"❌ **Over-Allocated!** You have assigned **{total_assigned_pct:.1f}%** of your savings pool. You must reduce this by **{total_assigned_pct - 100.0:.1f}%** before saving.")
-        pct_valid = False
-    else:
-        st.info(f"⚖️ **Allocation Balance:** **{total_assigned_pct:.1f}%** is currently assigned to custom buckets. The remaining **{unassigned_pct:.1f}%** will naturally route to Unallocated Savings.")
-        pct_valid = True
         
     is_any_row_editing = is_any_bucket_editing or is_any_unbacked_editing
     is_typing_anything = bool(st.session_state.get("new_b_name", "").strip()) or bool(st.session_state.get("new_unbacked_name", "").strip())
-    
-    # The 'pct_valid' flag is added to the lock to enforce the 100% rule
     lock_sync_button = is_any_row_editing or is_typing_anything or not pct_valid
     
     _, save_col = st.columns([6, 2])
@@ -369,22 +365,20 @@ def render_projection_math_modal():
     st.markdown("---")
     st.markdown("#### 2. Payday Distribution Logic (Live Example)")
     
-    # --- ADD SAFETY FLOATS HERE TO STRIP OUT THE GLITCHED STRINGS ---
     try:
         base_pay = float(st.session_state.get("base_pay", 0.0))
     except Exception:
         base_pay = 0.0
         
     try:
-        # This forces the app to read ONLY a clean number, dropping the ghost text
         sav_pct = float(st.session_state.get("pct_split_savings", 0.0))
     except Exception:
         sav_pct = 0.0
         
     total_pool = base_pay * (sav_pct / 100.0)
     
-    # This line will now be perfectly clean
-    st.info(f"**Your Current Baseline:** Base Pay (**\${base_pay:,.2f}**) × Savings Allocation (**{sav_pct}%**) = **\${total_pool:,.2f}** distributed per payday.")     
+    st.info(f"**Your Current Baseline:** Base Pay (**\${base_pay:,.2f}**) × Savings Allocation (**{sav_pct}%**) = **\${total_pool:,.2f}** distributed per payday.")
+    
     st.write("When the simulator hits a scheduled **Payday**, it divides that pool based on your Bucket configurations:")
     
     unassigned_pct = 100.0
