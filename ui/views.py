@@ -557,22 +557,54 @@ def render_projection_dashboard():
 
 
     with right_col:
-        st.markdown("### 🛠️ Step 2: Schedule Future Events")
-        st.caption("Plan a withdrawal (e.g. tuition, vacation) and watch the chart react.")
+            st.markdown("### 🛠️ Step 2: Schedule Future Events")
+            st.caption("Plan one-time or recurring inflows/outflows.")
 
-        if "projection_events" not in st.session_state:
-            st.session_state.projection_events = []
+            if "projection_events" not in st.session_state:
+                st.session_state.projection_events = []
 
-        # --- NEW: Callbacks to save state without breaking the page ---
-        def add_scheduled_event():
-            amt = st.session_state.get("proj_evt_amt", 0.0)
-            if amt > 0:
-                st.session_state.projection_events.append({
-                    "Bucket": st.session_state.get("proj_evt_bucket"),
-                    "Type": st.session_state.get("proj_evt_type"),
-                    "Amount": amt,
-                    "Target Date": st.session_state.get("proj_evt_date")
-                })
+            # --- ROW 1: Bucket and Action Type ---
+            evt_row1_col1, evt_row1_col2 = st.columns(2)
+            with evt_row1_col1:
+                chosen_b = st.selectbox("Target Bucket", all_buckets, key="proj_evt_bucket")
+            with evt_row1_col2:
+                evt_type = st.selectbox("Action Type", ["One-Time Withdrawal", "One-Time Deposit", "Recurring Monthly Deposit"], key="proj_evt_type")
+            
+            # --- ROW 2: Amount and Date/Frequency ---
+            evt_row2_col1, evt_row2_col2 = st.columns(2)
+            with evt_row2_col1:
+                evt_amt = st.number_input("Amount ($)", min_value=0.0, step=10.0, format="%.2f", key="proj_evt_amt")
+            with evt_row2_col2:
+                if "One-Time" in evt_type:
+                    chosen_date = st.date_input("Event Date", value=today, min_value=today, key="proj_evt_date")
+                    evt_freq = "None"
+                else:
+                    st.write("Starts from today")
+                    chosen_date = today
+                    evt_freq = "Monthly"
+
+            # --- ADD/RESET LOGIC ---
+            def add_scheduled_event():
+                amt = st.session_state.get("proj_evt_amt", 0.0)
+                if amt > 0:
+                    st.session_state.projection_events.append({
+                        "Bucket": st.session_state.get("proj_evt_bucket"),
+                        "Type": st.session_state.get("proj_evt_type"),
+                        "Amount": amt,
+                        "Target Date": st.session_state.get("proj_evt_date"),
+                        "Frequency": evt_freq
+                    })
+            
+            add_btn_col, reset_btn_col = st.columns([1, 1])
+            with add_btn_col: st.button("➕ Add Event", use_container_width=True, on_click=add_scheduled_event)
+            with reset_btn_col: st.button("🔄 Reset Schedule", use_container_width=True, on_click=lambda: st.session_state.update({"projection_events": []}))
+
+            # --- EVENT DISPLAY ---
+            if st.session_state.projection_events:
+                for item in st.session_state.projection_events:
+                    freq_txt = f" / {item['Frequency']}" if item['Frequency'] != "None" else ""
+                    act_label = "Deducting" if "Withdrawal" in item["Type"] else "Injecting"
+                    st.info(f"⏳ **{item['Target Date'].strftime('%b %d, %Y')}**{freq_txt}: {act_label} **${item['Amount']:,.2f}** ({item['Bucket']})", icon="📆")
                 
         def clear_scheduled_events():
             st.session_state.projection_events = []
@@ -669,10 +701,21 @@ def render_projection_dashboard():
             t_bucket = meta["Bucket"]
             amt = meta["Amount"]
             
-            if "Withdrawal" in meta["Type"]:
-                simulated_balances[t_bucket] -= amt
+            # Check for recurring logic
+            if meta.get("Frequency") == "Monthly":
+                # Only apply if the current step date is the monthly anniversary of the start date
+                if current_step_date.day == meta["Target Date"].day:
+                    if "Withdrawal" in meta["Type"]:
+                        simulated_balances[t_bucket] -= amt
+                    else:
+                        simulated_balances[t_bucket] += amt
             else:
-                simulated_balances[t_bucket] += amt
+                # Standard One-Time logic
+                if current_step_date == meta["Target Date"]:
+                    if "Withdrawal" in meta["Type"]:
+                        simulated_balances[t_bucket] -= amt
+                    else:
+                        simulated_balances[t_bucket] += amt
 
         snapshot = {"Date": current_step_date}
         for b_name, b_val in simulated_balances.items():
