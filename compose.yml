@@ -1,5 +1,5 @@
 services:
-  partner-app:
+  finance-app:
     image: 10.70.70.70:3000/rayns-domain/livefinanceapp:latest
     container_name: finance-app
     restart: unless-stopped
