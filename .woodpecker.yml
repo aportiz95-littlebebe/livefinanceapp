@@ -1,0 +1,102 @@
+clone:
+  git:
+    image: woodpeckerci/plugin-git:2
+    commands:
+      - echo "clone handled in steps"
+
+when:
+  - event: cron
+  - event: push
+  - event: manual
+
+steps:
+  - name: sync-mirror
+    image: alpine:3.21
+    environment:
+      FORGEJO_REGISTRY_TOKEN:
+        from_secret: forgejo_registry_token
+    commands:
+      - apk add --no-cache curl
+      - |
+        curl -sf -X POST \
+          -H "Authorization: token $FORGEJO_REGISTRY_TOKEN" \
+          --cacert /stacks/certs/ca.crt \
+          "https://10.70.70.70:3000/api/v1/repos/${CI_REPO_OWNER}/${CI_REPO_NAME}/mirror-sync"
+      - sleep 30
+
+  - name: check-sha
+    image: alpine:3.21
+    environment:
+      FORGEJO_REGISTRY_TOKEN:
+        from_secret: forgejo_registry_token
+    commands:
+      - apk add --no-cache curl jq
+      - |
+        SHA=$(curl -sf \
+          -H "Authorization: token $FORGEJO_REGISTRY_TOKEN" \
+          --cacert /stacks/certs/ca.crt \
+          "https://10.70.70.70:3000/api/v1/repos/${CI_REPO_OWNER}/${CI_REPO_NAME}/branches/main" \
+          | jq -r '.commit.id')
+        echo "Current SHA: $SHA"
+        echo "$SHA" > sha.txt
+        LAST_BUILT=$(cat /stacks/${CI_REPO_NAME}/.last-built-sha 2>/dev/null || echo "none")
+        if [ "$SHA" = "$LAST_BUILT" ]; then
+          echo "No changes since last build, skipping."
+          touch skip.txt
+        else
+          echo "New commit detected, proceeding with build."
+        fi
+
+  - name: clone
+    image: alpine/git:v2.54.0
+    environment:
+      GIT_SSL_CAINFO: /stacks/certs/ca.crt
+      FORGEJO_REGISTRY_TOKEN:
+        from_secret: forgejo_registry_token
+    commands:
+      - test -f skip.txt && exit 0
+      - SHA=$(cat sha.txt)
+      - git clone https://jason:$FORGEJO_REGISTRY_TOKEN@10.70.70.70:3000/${CI_REPO_OWNER}/${CI_REPO_NAME}.git .
+      - git checkout $SHA
+
+  - name: build
+    image: gcr.io/kaniko-project/executor:v1.23.2-debug
+    volumes:
+      - /var/lib/docker-stacks/certs/ca.crt:/kaniko/ssl/certs/ca.crt
+    environment:
+      FORGEJO_REGISTRY_TOKEN:
+        from_secret: forgejo_registry_token
+    commands:
+      - test -f skip.txt && exit 0
+      - SHA=$(cat sha.txt)
+      - mkdir -p /kaniko/.docker
+      - printf '{"auths":{"10.70.70.70:3000":{"auth":"%s"}}}' "$(printf 'jason:%s' "$FORGEJO_REGISTRY_TOKEN" | base64 | tr -d '\n')" > /kaniko/.docker/config.json
+      - /kaniko/executor
+        --context .
+        --dockerfile Dockerfile
+        --destination 10.70.70.70:3000/${CI_REPO_OWNER}/${CI_REPO_NAME}:$SHA
+        --destination 10.70.70.70:3000/${CI_REPO_OWNER}/${CI_REPO_NAME}:latest
+        --registry-certificate 10.70.70.70:3000=/kaniko/ssl/certs/ca.crt
+
+  - name: deploy
+    image: docker:27-cli
+    volumes:
+      - /var/lib/docker-stacks:/stacks
+    environment:
+      DOCKER_HOST: tcp://10.70.70.70:2375
+      FORGEJO_REGISTRY_TOKEN:
+        from_secret: forgejo_registry_token
+      STREAMLIT_SECRETS:
+        from_secret: STREAMLIT_SECRETS
+    commands:
+      - test -f skip.txt && exit 0
+      - SHA=$(cat sha.txt)
+      - |
+        mkdir -p ~/.docker
+        printf '{"auths":{"10.70.70.70:3000":{"auth":"%s"}}}' "$(printf 'jason:%s' "$FORGEJO_REGISTRY_TOKEN" | base64 | tr -d '\n')" > ~/.docker/config.json
+        mkdir -p /stacks/${CI_REPO_NAME}/appdata/.streamlit
+        printf '%s' "$STREAMLIT_SECRETS" > /stacks/${CI_REPO_NAME}/appdata/.streamlit/secrets.toml
+        cp ./compose.yml /stacks/${CI_REPO_NAME}/compose.yml
+        docker compose -f /stacks/${CI_REPO_NAME}/compose.yml pull
+        docker compose -f /stacks/${CI_REPO_NAME}/compose.yml up -d --remove-orphans
+        echo "$SHA" > /stacks/${CI_REPO_NAME}/.last-built-sha
