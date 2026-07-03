@@ -29,10 +29,11 @@ steps:
     commands:
       - mkdir -p /kaniko/.docker
       - printf '{"auths":{"10.70.70.70:3000":{"auth":"%s"}}}' "$(printf 'jason:%s' "$FORGEJO_REGISTRY_TOKEN" | base64 | tr -d '\n')" > /kaniko/.docker/config.json
+      - REPO_LC=$(echo ${CI_REPO_NAME} | tr '[:upper:]' '[:lower:]')
       - /kaniko/executor
         --context .
         --dockerfile Dockerfile
-        --destination 10.70.70.70:3000/${CI_REPO_OWNER}/${CI_REPO_NAME}:latest
+        --destination 10.70.70.70:3000/${CI_REPO_OWNER}/$REPO_LC:latest
         --registry-certificate 10.70.70.70:3000=/kaniko/ssl/certs/ca.crt
 
   - name: deploy
