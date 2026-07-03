@@ -6,4 +6,4 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      - /var/lib/docker-stacks/LiveFinanceApp/appdata/.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
+      - /var/lib/docker-stacks/livefinanceapp/appdata/.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
