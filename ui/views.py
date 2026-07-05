@@ -107,7 +107,7 @@ def render_budget_dashboard():
 
     st.markdown("---")
 
-# --- BANK BALANCE QUICK-CHECK BLOCK ---
+    # --- BANK BALANCE QUICK-CHECK BLOCK ---
     with st.container():
         st.markdown("### 🏦 Checking Account Quick-Check")
         
