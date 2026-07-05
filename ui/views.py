@@ -106,6 +106,63 @@ def render_budget_dashboard():
         else: st.success("No bills scheduled in the next block.")
 
     st.markdown("---")
+
+# --- BANK BALANCE QUICK-CHECK BLOCK ---
+    with st.container():
+        st.markdown("### 🏦 Checking Account Quick-Check")
+        
+        # 1. Calculate bills that are scheduled for this period but haven't been paid yet (Due Date > Today)
+        unpaid_bills_total = 0.0
+        for bill in st.session_state.fixed_bills:
+            if bill.get("Amount", 0.0) > 0:
+                current_check = current_period_start
+                while current_check <= current_period_end:
+                    if current_check.day == bill.get("Due Day", 1):
+                        # If the due date hasn't happened yet, the money is still sitting in your bank
+                        if current_check > today:
+                            unpaid_bills_total += bill["Amount"]
+                        break
+                    current_check += timedelta(days=1)
+
+        # 2. Calculate expected checking cash
+        payday_balance = metrics['needs_target'] + metrics['wants_target']
+        
+        # Add the unpaid bills back into the expected balance since they haven't left checking yet!
+        current_expected_balance = metrics['needs_remaining'] + metrics['wants_remaining'] + unpaid_bills_total
+        
+        chk_col1, chk_col2, chk_col3 = st.columns(3)
+        with chk_col1:
+            st.metric(
+                label="Starting Payday Balance", 
+                value=f"${payday_balance:,.2f}", 
+                help="Needs Budget + Wants Budget"
+            )
+        with chk_col2:
+            st.metric(
+                label="Current Expected Balance", 
+                value=f"${current_expected_balance:,.2f}", 
+                help="Remaining Needs + Remaining Wants + Unpaid Bills"
+            )
+        with chk_col3:
+            actual_bank = st.number_input(
+                "Actual Bank Balance ($)", 
+                min_value=0.0, 
+                step=1.0, 
+                format="%.2f", 
+                key="quick_bank_check"
+            )
+            diff = actual_bank - current_expected_balance
+            
+            if actual_bank > 0:
+                if diff == 0:
+                    st.success("✅ Spot on! Everything is logged.")
+                elif diff > 0:
+                    st.warning(f"🤔 Bank has **${diff:,.2f}** more. Did you get a refund?")
+                else:
+                    st.error(f"⚠️ App has **${abs(diff):,.2f}** more. Missed an expense?")
+    
+    st.markdown("---")
+    # --------------------------------------
     
     side_col_form, side_col_progress = st.columns([1.1, 0.9])
     with side_col_form:
