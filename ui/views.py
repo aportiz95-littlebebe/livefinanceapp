@@ -619,38 +619,94 @@ def render_projection_dashboard():
     st.line_chart(chart_df[selected] if selected else chart_df, use_container_width=True)
 
 def render_payoff_simulator():
-    """Renders a standalone debt payoff vs savings recovery tool."""
-    with st.expander("🚀 Debt Payoff & Recovery Simulator", expanded=False):
-        st.write("Simulate draining a savings bucket to kill a debt, and routing the old payment back into savings.")
+    """Renders a standalone debt payoff vs savings recovery tool dynamically linked to live app data."""
+    with st.expander("🚀 Dynamic Debt Payoff Simulator", expanded=False):
+        st.write("Simulate draining a specific savings bucket to kill a fixed bill, and routing that old payment back into the bucket.")
         
-        sim_col1, sim_col2, sim_col3, sim_col4 = st.columns(4)
-        with sim_col1:
-            bal_input = st.number_input("Current Bucket Balance ($)", min_value=0.0, value=10000.0, step=500.0)
-        with sim_col2:
-            debt_input = st.number_input("Debt to Pay Off ($)", min_value=0.0, value=5000.0, step=500.0)
-        with sim_col3:
-            sav_input = st.number_input("Current Monthly Savings ($)", min_value=0.0, value=200.0, step=50.0)
-        with sim_col4:
-            freed_input = st.number_input("Freed-up Monthly Payment ($)", min_value=0.0, value=300.0, step=50.0)
+        # --- 1. FETCH LIVE CONTEXTUAL DATA ---
+        today = datetime.now().date()
+        base_income = st.session_state.get("base_pay", 0.0)
+        sav_pct = st.session_state.get("pct_split_savings", 0.0)
+        freq = st.session_state.get("pay_frequency", "Bi-weekly")
+        
+        # Calculate true monthly savings flow based on pay frequency
+        paychecks_per_month = 4.33 if freq == "Weekly" else (2.16 if freq == "Bi-weekly" else 1.0)
+        monthly_savings_pool = (base_income * (sav_pct / 100.0)) * paychecks_per_month
+        
+        # Resolve all current bucket balances (matching views.py ledger logic)
+        bucket_balances, allocated_total, unassigned_pct, _ = calculate_bucket_balances(st.session_state.bucket_config, st.session_state.savings_ledger)
+        
+        df_sav = st.session_state.savings_ledger.copy()
+        tracking_start = st.session_state.get('tracking_start_date', today)
+        manual_deposits_total, forward_payday_auto = 0.0, 0.0
+        if not df_sav.empty:
+            df_sav['Date'] = pd.to_datetime(df_sav['Date']).dt.date
+            manual_deposits_total = df_sav[(df_sav["Type"] != "Payday Split") & (df_sav["Date"] > tracking_start)]["Amount"].sum()
+            forward_payday_auto = df_sav[(df_sav["Type"] == "Payday Split") & (df_sav["Date"] > tracking_start)]["Amount"].sum()
+        
+        net_total_savings = st.session_state.get("starting_savings_balance", 0.0) + forward_payday_auto + manual_deposits_total
+        unassigned_bal = net_total_savings - allocated_total
+
+        all_buckets = ["Unallocated Savings"] + list(st.session_state.bucket_config.keys())
+        
+        # Fetch live bills
+        bill_options = {bill["Name"]: bill["Amount"] for bill in st.session_state.fixed_bills if bill["Amount"] > 0}
+        bill_names = ["-- Select a Bill --"] + list(bill_options.keys())
+
+        # --- 2. SCENARIO SETUP UI ---
+        st.markdown("### 🎛️ Scenario Setup")
+        col_b, col_debt, col_bill = st.columns(3)
+        with col_b:
+            sel_bucket = st.selectbox("Source Savings Bucket", all_buckets)
+        with col_debt:
+            remainder_to_pay = st.number_input("Remainder to Pay Off ($)", min_value=0.0, value=0.0, step=100.0)
+        with col_bill:
+            sel_bill = st.selectbox("Debt Being Eliminated", bill_names)
             
-        if st.button("Run Payoff Scenario", use_container_width=True):
-            results = calculate_payoff_recovery(bal_input, debt_input, sav_input, freed_input)
+        # --- 3. RESOLVE DYNAMIC SELECTIONS ---
+        if sel_bucket == "Unallocated Savings":
+            current_bal = unassigned_bal
+            bucket_monthly_savings = monthly_savings_pool * (unassigned_pct / 100.0)
+        else:
+            current_bal = bucket_balances.get(sel_bucket, 0.0)
+            bucket_pct = float(st.session_state.bucket_config[sel_bucket].get("pct", 0.0))
+            bucket_monthly_savings = monthly_savings_pool * (bucket_pct / 100.0)
+            
+        freed_payment_amt = bill_options.get(sel_bill, 0.0) if sel_bill != "-- Select a Bill --" else 0.0
+        
+        # --- 4. DISPLAY EXTRACTED METRICS ---
+        st.markdown("#### 📊 Live Data Extracted")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Available Bucket Balance", f"${current_bal:,.2f}")
+        c2.metric("Current Flow to Bucket", f"${bucket_monthly_savings:,.2f}/mo")
+        c3.metric("Freed-up Bill Payment", f"${freed_payment_amt:,.2f}/mo")
+        
+        st.write("")
+        
+        # --- 5. EXECUTION & CHARTING ---
+        if st.button("Run Payoff Scenario", use_container_width=True, disabled=(remainder_to_pay <= 0 or freed_payment_amt <= 0)):
+            results = calculate_payoff_recovery(
+                current_balance=current_bal, 
+                debt_amount=remainder_to_pay, 
+                current_monthly_contribution=bucket_monthly_savings, 
+                freed_up_payment=freed_payment_amt
+            )
             
             if "error" in results:
-                st.error(results["error"])
+                st.error(f"❌ {results['error']} You need at least ${remainder_to_pay:,.2f} in this bucket to run the simulation.")
             else:
                 st.markdown("---")
                 res_c1, res_c2, res_c3 = st.columns(3)
-                res_c1.metric("New Savings Rate", f"${results['new_monthly_rate']:,.2f}/mo", delta=f"+${freed_input:,.2f}")
-                res_c2.metric("Months to Replenish", f"{results['months_to_replenish']} months")
-                res_c3.metric("Net Worth Crossover", f"{results['crossover_month']} months", help="When your new balance officially beats your old trajectory.")
+                res_c1.metric("New Monthly Bucket Growth", f"${results['new_monthly_rate']:,.2f}/mo", delta=f"+${freed_payment_amt:,.2f}")
+                res_c2.metric("Months to Replenish Balance", f"{results['months_to_replenish']} months")
+                res_c3.metric("Net Worth Crossover", f"{results['crossover_month']} months", help="When your new trajectory beats your old trajectory.")
                 
                 # Generate Chart Data
                 chart_data = []
-                for m in range(int(results['crossover_month'] + 12)): # Show up to a year past crossover
-                    status_quo = bal_input + (sav_input * m)
+                for m in range(int(results['crossover_month'] + 12)): 
+                    status_quo = current_bal + (bucket_monthly_savings * m)
                     debt_free = results["new_starting_balance"] + (results["new_monthly_rate"] * m)
-                    chart_data.append({"Month": m, "Status Quo": status_quo, "Debt Free Path": debt_free})
+                    chart_data.append({"Month": m, "Status Quo (Keep Debt)": status_quo, "Debt Free Path": debt_free})
                 
                 df_chart = pd.DataFrame(chart_data).set_index("Month")
                 st.line_chart(df_chart, use_container_width=True)
