@@ -12,7 +12,8 @@ from core.calculations import (
     compute_budget_metrics,
     project_payday_cadence,
     calculate_bucket_balances,
-    calculate_goal_timeline
+    calculate_goal_timeline,
+    calculate_payoff_recovery
 )
 
 def render_budget_dashboard():
@@ -523,7 +524,8 @@ def render_projection_dashboard():
         if st.button("🧮 View the Math", use_container_width=True):
             st.session_state.show_proj_math_modal = True
             st.rerun()
-
+    render_payoff_simulator()
+    
     today = datetime.now().date()
     
     # --- DATA PARSING ---
