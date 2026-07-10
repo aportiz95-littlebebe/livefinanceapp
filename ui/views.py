@@ -615,3 +615,40 @@ def render_projection_dashboard():
         st.button("🔄 Reset View", on_click=lambda: st.session_state.update({"proj_chart_filter_multiselect": []}))
         
     st.line_chart(chart_df[selected] if selected else chart_df, use_container_width=True)
+
+def render_payoff_simulator():
+    """Renders a standalone debt payoff vs savings recovery tool."""
+    with st.expander("🚀 Debt Payoff & Recovery Simulator", expanded=False):
+        st.write("Simulate draining a savings bucket to kill a debt, and routing the old payment back into savings.")
+        
+        sim_col1, sim_col2, sim_col3, sim_col4 = st.columns(4)
+        with sim_col1:
+            bal_input = st.number_input("Current Bucket Balance ($)", min_value=0.0, value=10000.0, step=500.0)
+        with sim_col2:
+            debt_input = st.number_input("Debt to Pay Off ($)", min_value=0.0, value=5000.0, step=500.0)
+        with sim_col3:
+            sav_input = st.number_input("Current Monthly Savings ($)", min_value=0.0, value=200.0, step=50.0)
+        with sim_col4:
+            freed_input = st.number_input("Freed-up Monthly Payment ($)", min_value=0.0, value=300.0, step=50.0)
+            
+        if st.button("Run Payoff Scenario", use_container_width=True):
+            results = calculate_payoff_recovery(bal_input, debt_input, sav_input, freed_input)
+            
+            if "error" in results:
+                st.error(results["error"])
+            else:
+                st.markdown("---")
+                res_c1, res_c2, res_c3 = st.columns(3)
+                res_c1.metric("New Savings Rate", f"${results['new_monthly_rate']:,.2f}/mo", delta=f"+${freed_input:,.2f}")
+                res_c2.metric("Months to Replenish", f"{results['months_to_replenish']} months")
+                res_c3.metric("Net Worth Crossover", f"{results['crossover_month']} months", help="When your new balance officially beats your old trajectory.")
+                
+                # Generate Chart Data
+                chart_data = []
+                for m in range(int(results['crossover_month'] + 12)): # Show up to a year past crossover
+                    status_quo = bal_input + (sav_input * m)
+                    debt_free = results["new_starting_balance"] + (results["new_monthly_rate"] * m)
+                    chart_data.append({"Month": m, "Status Quo": status_quo, "Debt Free Path": debt_free})
+                
+                df_chart = pd.DataFrame(chart_data).set_index("Month")
+                st.line_chart(df_chart, use_container_width=True)
