@@ -198,3 +198,23 @@ def calculate_goal_timeline(remaining, biweekly_flow, next_payday_date, interval
     if next_payday_date:
         return paychecks_req, next_payday_date + timedelta(days=(paychecks_req - 1) * interval_days)
     return None, None
+
+def calculate_payoff_recovery(current_balance, debt_amount, current_monthly_contribution, freed_up_payment):
+    """Calculates the time to recover a bucket balance and the crossover point."""
+    if current_balance < debt_amount:
+        return {"error": "Insufficient funds in the bucket."}
+    
+    new_monthly_contribution = current_monthly_contribution + freed_up_payment
+    
+    # Time to get back to the pre-payoff balance
+    months_to_replenish = debt_amount / new_monthly_contribution if new_monthly_contribution > 0 else float('inf')
+    
+    # Time until the new trajectory is mathematically richer than the old one
+    crossover_month = debt_amount / freed_up_payment if freed_up_payment > 0 else float('inf')
+    
+    return {
+        "new_starting_balance": current_balance - debt_amount,
+        "new_monthly_rate": new_monthly_contribution,
+        "months_to_replenish": round(months_to_replenish, 1),
+        "crossover_month": round(crossover_month, 1)
+    }
