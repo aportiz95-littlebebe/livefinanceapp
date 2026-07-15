@@ -3,6 +3,7 @@ import pandas as pd
 import calendar
 from datetime import datetime, date, timedelta
 from data.state import push_df_to_google
+from core.calculations import calculate_accelerated_debt_payoff
 from core.calculations import (
     get_period_dates, 
     get_income_for_date, 
@@ -717,6 +718,37 @@ def render_projection_dashboard():
         st.button("🔄 Reset View", on_click=lambda: st.session_state.update({"proj_chart_filter_multiselect": []}))
         
     st.line_chart(chart_df[selected] if selected else chart_df, use_container_width=True)
+    with st.expander("⚡ Accelerated Debt Payoff Calculator"):
+    st.write("See how fast you can kill a debt by adding extra cash to your payments.")
+    
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        d_balance = st.number_input("Current Balance ($)", min_value=0.0, value=5000.0, step=100.0)
+        d_rate = st.number_input("Annual Interest Rate (%)", min_value=0.0, value=19.9, step=0.1)
+    with c2:
+        d_base = st.number_input("Base Payment ($)", min_value=0.0, value=150.0, step=10.0)
+        d_extra = st.number_input("Extra Payment Amount ($)", min_value=0.0, value=50.0, step=10.0)
+    with c3:
+        d_freq = st.selectbox("Payment Frequency", ["Monthly", "Bi-weekly", "Weekly"])
+        
+    if st.button("Calculate Payoff Speed", use_container_width=True):
+        # Run Baseline (No Extra Payment)
+        baseline = calculate_accelerated_debt_payoff(d_balance, d_rate, d_base, 0.0, d_freq)
+        # Run Accelerated (With Extra Payment)
+        accelerated = calculate_accelerated_debt_payoff(d_balance, d_rate, d_base, d_extra, d_freq)
+        
+        if "error" in baseline:
+            st.error(baseline["error"])
+        else:
+            st.markdown("---")
+            res1, res2, res3 = st.columns(3)
+            
+            time_saved = baseline['months_needed'] - accelerated['months_needed']
+            interest_saved = baseline['total_interest'] - accelerated['total_interest']
+            
+            res1.metric("New Payoff Time", f"{accelerated['months_needed']} months", delta=f"-{round(time_saved, 1)} months", delta_color="inverse")
+            res2.metric("Total Interest Paid", f"${accelerated['total_interest']:,.2f}", delta=f"-${interest_saved:,.2f}", delta_color="inverse")
+            res3.metric("Total Payments", f"{accelerated['payments_needed']} checks")
 
 def render_payoff_simulator():
     """Renders a standalone debt payoff vs savings recovery tool dynamically linked to live app data."""
