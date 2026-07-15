@@ -218,3 +218,55 @@ def calculate_payoff_recovery(current_balance, debt_amount, current_monthly_cont
         "months_to_replenish": round(months_to_replenish, 1),
         "crossover_month": round(crossover_month, 1)
     }
+    
+def calculate_accelerated_debt_payoff(balance, annual_interest_rate, base_payment, extra_payment=0.0, frequency="Monthly"):
+    """
+    Calculates the time required to pay off a debt with optional extra payments.
+    Returns the timeline and total interest paid.
+    """
+    if balance <= 0:
+        return {"payments_needed": 0, "months_needed": 0, "total_interest": 0.0, "years_needed": 0.0}
+
+    total_payment = base_payment + extra_payment
+    
+    # Define compounding periods based on payment frequency
+    if frequency == "Weekly":
+        periods_per_year = 52
+    elif frequency == "Bi-weekly":
+        periods_per_year = 26
+    else: # Default to Monthly
+        periods_per_year = 12
+        
+    rate_per_period = (annual_interest_rate / 100.0) / periods_per_year
+    
+    # Guardrail: Check if the payment even covers the recurring interest
+    if rate_per_period > 0 and total_payment <= (balance * rate_per_period):
+        return {"error": "Your total payment is too small to cover the interest charge. The debt will grow infinitely."}
+        
+    payments_needed = 0
+    current_balance = balance
+    total_interest = 0.0
+    
+    # Loop through the amortization schedule (capped at 1200 periods / ~100 years to prevent infinite hangs)
+    while current_balance > 0 and payments_needed < 1200:
+        interest_charge = current_balance * rate_per_period
+        total_interest += interest_charge
+        
+        principal_payment = total_payment - interest_charge
+        
+        # Catch the final payment if it overshoots the remaining balance
+        if current_balance < principal_payment:
+            principal_payment = current_balance
+            
+        current_balance -= principal_payment
+        payments_needed += 1
+        
+    # Convert total periods back to standard timeframes
+    months_needed = payments_needed / (periods_per_year / 12.0)
+    
+    return {
+        "payments_needed": payments_needed,
+        "months_needed": round(months_needed, 1),
+        "years_needed": round(months_needed / 12.0, 1),
+        "total_interest": round(total_interest, 2)
+    }
