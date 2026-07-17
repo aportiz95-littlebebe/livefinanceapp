@@ -77,10 +77,39 @@ def render_budget_dashboard():
         
         ytd_earned = calculate_ytd_income(st.session_state.income_history, today)
         st.metric(label="📈 Total Salary Earned YTD", value=f"${ytd_earned:,.2f}")
+        
+        st.markdown("#### ⚖️ Assigned vs Actual Usage")
+        
+        # 1. Safely calculate the actual percentages used (prevents errors if base pay is 0)
+        actual_needs_pct = (metrics['total_needs_burden'] / current_income * 100) if current_income > 0 else 0.0
+        actual_wants_pct = (metrics['wants_spent'] / current_income * 100) if current_income > 0 else 0.0
+        
+        # 2. Find the actual savings moved during this specific pay period
+        actual_savings_amt = 0.0
+        if not st.session_state.savings_ledger.empty:
+            df_sav = st.session_state.savings_ledger.copy()
+            df_sav['Date'] = pd.to_datetime(df_sav['Date']).dt.date
+            # Look only at deposits (Amount > 0) within the current pay period dates
+            period_sav = df_sav[
+                (df_sav['Date'] >= current_period_start) & 
+                (df_sav['Date'] <= current_period_end) & 
+                (df_sav['Amount'] > 0)
+            ]
+            actual_savings_amt = period_sav['Amount'].sum()
             
-        st.metric(label=f"Needs Budget ({st.session_state.pct_split_needs:,.0f}%)", value=f"${metrics['needs_target']:,.2f}")
-        st.metric(label=f"Wants Budget ({st.session_state.pct_split_wants:,.0f}%)", value=f"${metrics['wants_target']:,.2f}")
-        st.metric(label=f"Savings Budget ({st.session_state.pct_split_savings:,.0f}%)", value=f"${current_income * (st.session_state.pct_split_savings / 100.0):,.2f}")
+        actual_savings_pct = (actual_savings_amt / current_income * 100) if current_income > 0 else 0.0
+        target_savings_amt = current_income * (st.session_state.pct_split_savings / 100.0)
+
+        # 3. Build an easy-to-read comparison table
+        st.markdown(
+            f"""
+            | Category | Assigned Budget | Actual Usage |
+            |---|---|---|
+            | **🛡️ Needs** | {st.session_state.pct_split_needs:,.0f}% (`${metrics['needs_target']:,.2f}`) | {actual_needs_pct:,.1f}% (`${metrics['total_needs_burden']:,.2f}`) |
+            | **🎉 Wants** | {st.session_state.pct_split_wants:,.0f}% (`${metrics['wants_target']:,.2f}`) | {actual_wants_pct:,.1f}% (`${metrics['wants_spent']:,.2f}`) |
+            | **🏦 Savings** | {st.session_state.pct_split_savings:,.0f}% (`${target_savings_amt:,.2f}`) | {actual_savings_pct:,.1f}% (`${actual_savings_amt:,.2f}`) |
+            """
+        )
 
     with dash_top_mid:
         st.markdown("### 📅 Bills Due This Pay Period")
