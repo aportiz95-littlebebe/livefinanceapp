@@ -39,7 +39,10 @@ def init_session_state():
     if 'pay_frequency' not in st.session_state: st.session_state.pay_frequency = "Bi-weekly"
     if 'anchor_mode' not in st.session_state: st.session_state.anchor_mode = "First Payday of the Year"
     if 'first_payday' not in st.session_state: st.session_state.first_payday = date(2026, 1, 1)
-
+    
+    if 'rental_ledger' not in st.session_state:
+        st.session_state.rental_ledger = pd.DataFrame(columns=["Date", "Type", "Description", "Amount"])
+    
 # --- GOOGLE SHEETS API INTEGRATION ---
 
 def get_google_sheet():
@@ -71,6 +74,12 @@ def load_data_from_google():
             if records: st.session_state.savings_ledger = pd.DataFrame(records)
         except gspread.exceptions.WorksheetNotFound: pass
 
+        try:
+            worksheet = sheet.worksheet("Rental")
+            records = worksheet.get_all_records()
+            if records: st.session_state.rental_ledger = pd.DataFrame(records)
+        except gspread.exceptions.WorksheetNotFound: pass
+            
         try:
             worksheet = sheet.worksheet("Config")
             records = worksheet.get_all_records()
