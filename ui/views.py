@@ -728,12 +728,43 @@ def render_projection_dashboard():
     st.line_chart(chart_df[selected] if selected else chart_df, use_container_width=True)
 
 def render_rental_dashboard():
+    from data.state import push_df_to_google, push_config_to_google
     st.subheader("🏠 Rental Property Dashboard")
     st.caption("Track rental income, mortgage payments, insurance, and maintenance to calculate net property profit.")
     st.markdown("---")
     
     today = datetime.now().date()
     
+    # --- LEASE MANAGEMENT ---
+    st.markdown("### 📝 Lease Details & Deadlines")
+    
+    # Retrieve saved dates or default to today/next year
+    l_start = st.session_state.get("lease_start_date", today)
+    l_end = st.session_state.get("lease_end_date", today + timedelta(days=365))
+    
+    l1, l2, l3 = st.columns([1.5, 1.5, 1])
+    with l1:
+        lease_start = st.date_input("Lease Start Date", value=l_start, key="lease_start_input")
+    with l2:
+        lease_end = st.date_input("Lease End Date", value=l_end, key="lease_end_input")
+    with l3:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        if st.button("💾 Save Dates", use_container_width=True):
+            st.session_state.lease_start_date = lease_start
+            st.session_state.lease_end_date = lease_end
+            push_config_to_google()
+            st.rerun()
+
+    # Calculate Deadlines backward from the end date
+    reminder_90 = lease_end - timedelta(days=90)
+    response_60 = lease_end - timedelta(days=60)
+    
+    d1, d2 = st.columns(2)
+    d1.info(f"**🔔 90-Day Renewal Reminder:**\n\nSend notice by: **{reminder_90.strftime('%b %d, %Y')}**")
+    d2.warning(f"**⏳ 60-Day Response Needed:**\n\nTenant must reply by: **{response_60.strftime('%b %d, %Y')}**")
+    
+    st.markdown("---")
+
     # --- DATA CALCULATION ---
     df_rent = st.session_state.rental_ledger.copy()
     total_income = 0.0
@@ -756,7 +787,6 @@ def render_rental_dashboard():
     m3.metric("Total Insurance", f"${total_insurance:,.2f}")
     m4.metric("Total Maintenance", f"${total_expenses:,.2f}")
     
-    # Highlight profit differently if it is negative
     profit_delta = "Profitable" if net_profit >= 0 else "Operating at Loss"
     m5.metric("Net Profit / Leftover", f"${net_profit:,.2f}", delta=profit_delta, delta_color="normal" if net_profit >= 0 else "inverse")
 
