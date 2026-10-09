@@ -73,11 +73,12 @@ if st.session_state.get('show_proj_math_modal', False):
 st.title("📊 My Finance Dashboard")
 st.markdown("---")
 
-# ADDED THIRD OPTION TO TABS LIST HERE
-tab_dashboard, tab_savings, tab_projections = st.tabs([
+# ADDED FOURTH OPTION TO TABS LIST HERE
+tab_dashboard, tab_savings, tab_projections, tab_rental = st.tabs([
     "📊 Budget Dashboard", 
     "💰 Savings & Goals Dashboard", 
-    "🔮 Savings Projections"
+    "🔮 Savings Projections",
+    "🏠 Rental Property"
 ])
 
 with tab_dashboard:
@@ -86,7 +87,10 @@ with tab_dashboard:
 with tab_savings:
     render_savings_dashboard()
 
-# EXECUTE CHRONOLOGICAL SIMULATOR RENDER LOOP
 with tab_projections:
     from ui.views import render_projection_dashboard
     render_projection_dashboard()
+
+with tab_rental:
+    from ui.views import render_rental_dashboard
+    render_rental_dashboard()
