@@ -94,7 +94,7 @@ def load_data_from_google():
                     else:
                         parsed_val = val
                     
-                    if key in ["first_payday", "next_payday", "tracking_start_date"]:
+                    if key in ["first_payday", "next_payday", "tracking_start_date", "lease_start_date", "lease_end_date"]:
                         try:
                             if isinstance(parsed_val, str):
                                 clean_str = parsed_val.replace('"', '').strip()
@@ -128,7 +128,11 @@ def push_config_to_google():
         
         f_payday_str = st.session_state.first_payday.strftime("%Y-%m-%d") if isinstance(st.session_state.first_payday, (date, datetime)) else str(st.session_state.first_payday)
         n_payday_str = st.session_state.next_payday.strftime("%Y-%m-%d") if isinstance(st.session_state.next_payday, (date, datetime)) else str(st.session_state.next_payday)
-        t_start_str = st.session_state.tracking_start_date.strftime("%Y-%m-%d") if isinstance(st.session_state.tracking_start_date, (date, datetime)) else str(st.session_state.tracking_start_date)
+       t_start_str = st.session_state.tracking_start_date.strftime("%Y-%m-%d") if isinstance(st.session_state.tracking_start_date, (date, datetime)) else str(st.session_state.tracking_start_date)
+        
+        # Add these two lines for the lease dates
+        l_start_str = st.session_state.lease_start_date.strftime("%Y-%m-%d") if 'lease_start_date' in st.session_state and isinstance(st.session_state.lease_start_date, (date, datetime)) else str(date.today())
+        l_end_str = st.session_state.lease_end_date.strftime("%Y-%m-%d") if 'lease_end_date' in st.session_state and isinstance(st.session_state.lease_end_date, (date, datetime)) else str(date.today())
 
         configs = [
             ["fixed_bills", json.dumps(st.session_state.fixed_bills)],
@@ -140,7 +144,9 @@ def push_config_to_google():
             ["pct_split_savings", json.dumps(st.session_state.pct_split_savings)],
             ["starting_savings_balance", json.dumps(st.session_state.starting_savings_balance)],
             ["tracking_start_date", json.dumps(t_start_str)],
-            ["base_pay", json.dumps(st.session_state.base_pay)], # PERSISTENT FIELD TRACKING
+            ["lease_start_date", json.dumps(l_start_str)], # ADD THIS LINE
+            ["lease_end_date", json.dumps(l_end_str)],     # ADD THIS LINE
+            ["base_pay", json.dumps(st.session_state.base_pay)],
             ["first_payday", json.dumps(f_payday_str)],  
             ["next_payday", json.dumps(n_payday_str)],    
             ["pay_frequency", json.dumps(st.session_state.pay_frequency)] 
