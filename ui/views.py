@@ -608,79 +608,6 @@ def render_projection_dashboard():
             st.rerun()
             
     render_payoff_simulator()
-
-def render_rental_dashboard():
-    st.subheader("🏠 Rental Property Dashboard")
-    st.caption("Track rental income, mortgage payments, insurance, and maintenance to calculate net property profit.")
-    st.markdown("---")
-    
-    today = datetime.now().date()
-    
-    # --- DATA CALCULATION ---
-    df_rent = st.session_state.rental_ledger.copy()
-    total_income = 0.0
-    total_mortgage = 0.0
-    total_insurance = 0.0
-    total_expenses = 0.0
-    
-    if not df_rent.empty:
-        total_income = df_rent[df_rent["Type"] == "Rent Income"]["Amount"].sum()
-        total_mortgage = df_rent[df_rent["Type"] == "Mortgage"]["Amount"].sum()
-        total_insurance = df_rent[df_rent["Type"] == "Insurance"]["Amount"].sum()
-        total_expenses = df_rent[df_rent["Type"] == "Maintenance/Expense"]["Amount"].sum()
-        
-    net_profit = total_income - (total_mortgage + total_insurance + total_expenses)
-    
-    # --- METRICS OVERVIEW ---
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Gross Rent Income", f"${total_income:,.2f}")
-    m2.metric("Total Mortgage Paid", f"${total_mortgage:,.2f}")
-    m3.metric("Total Insurance", f"${total_insurance:,.2f}")
-    m4.metric("Total Maintenance", f"${total_expenses:,.2f}")
-    
-    # Highlight profit differently if it is negative
-    profit_delta = "Profitable" if net_profit >= 0 else "Operating at Loss"
-    m5.metric("Net Profit / Leftover", f"${net_profit:,.2f}", delta=profit_delta, delta_color="normal" if net_profit >= 0 else "inverse")
-
-    st.markdown("---")
-    
-    # --- LOGGING FORM ---
-    form_col, ledger_col = st.columns([1, 1.5])
-    
-    with form_col:
-        st.markdown("### 📥 Log Property Activity")
-        rent_type = st.selectbox("Transaction Type", ["Rent Income", "Mortgage", "Insurance", "Maintenance/Expense"], key="rent_type_input")
-        rent_date = st.date_input("Date", value=today, key="rent_date_input")
-        rent_desc = st.text_input("Description / Notes", placeholder="e.g., October Rent, Plumbing Repair", key="rent_desc_input")
-        rent_amt = st.number_input("Amount ($)", min_value=0.0, value=0.0, step=50.0, format="%.2f", key="rent_amt_input")
-        
-        if st.button("Log Transaction", use_container_width=True):
-            if rent_amt > 0:
-                new_rent_row = pd.DataFrame([{
-                    "Date": rent_date.strftime("%Y-%m-%d"),
-                    "Type": rent_type,
-                    "Description": rent_desc,
-                    "Amount": rent_amt
-                }])
-                st.session_state.rental_ledger = pd.concat([st.session_state.rental_ledger, new_rent_row], ignore_index=True)
-                push_df_to_google("Rental", st.session_state.rental_ledger)
-                st.rerun()
-
-    with ledger_col:
-        st.markdown("### 📜 Property Ledger")
-        st.caption("Double-click any cell to edit, or select a row and press Delete to remove it.")
-        edited_rent_df = st.data_editor(
-            st.session_state.rental_ledger,
-            use_container_width=True,
-            num_rows="dynamic",
-            hide_index=True,
-            key="rental_ledger_editor"
-        )
-        
-        if st.button("Save Ledger Changes", use_container_width=True):
-            st.session_state.rental_ledger = edited_rent_df
-            push_df_to_google("Rental", st.session_state.rental_ledger)
-            st.rerun()
             
     # --- NEW ACCELERATED PAYOFF CALCULATOR ---
     with st.expander("⚡ Accelerated Debt Payoff Calculator"):
@@ -799,3 +726,76 @@ def render_rental_dashboard():
         st.button("🔄 Reset View", on_click=lambda: st.session_state.update({"proj_chart_filter_multiselect": []}))
         
     st.line_chart(chart_df[selected] if selected else chart_df, use_container_width=True)
+
+def render_rental_dashboard():
+    st.subheader("🏠 Rental Property Dashboard")
+    st.caption("Track rental income, mortgage payments, insurance, and maintenance to calculate net property profit.")
+    st.markdown("---")
+    
+    today = datetime.now().date()
+    
+    # --- DATA CALCULATION ---
+    df_rent = st.session_state.rental_ledger.copy()
+    total_income = 0.0
+    total_mortgage = 0.0
+    total_insurance = 0.0
+    total_expenses = 0.0
+    
+    if not df_rent.empty:
+        total_income = df_rent[df_rent["Type"] == "Rent Income"]["Amount"].sum()
+        total_mortgage = df_rent[df_rent["Type"] == "Mortgage"]["Amount"].sum()
+        total_insurance = df_rent[df_rent["Type"] == "Insurance"]["Amount"].sum()
+        total_expenses = df_rent[df_rent["Type"] == "Maintenance/Expense"]["Amount"].sum()
+        
+    net_profit = total_income - (total_mortgage + total_insurance + total_expenses)
+    
+    # --- METRICS OVERVIEW ---
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Gross Rent Income", f"${total_income:,.2f}")
+    m2.metric("Total Mortgage Paid", f"${total_mortgage:,.2f}")
+    m3.metric("Total Insurance", f"${total_insurance:,.2f}")
+    m4.metric("Total Maintenance", f"${total_expenses:,.2f}")
+    
+    # Highlight profit differently if it is negative
+    profit_delta = "Profitable" if net_profit >= 0 else "Operating at Loss"
+    m5.metric("Net Profit / Leftover", f"${net_profit:,.2f}", delta=profit_delta, delta_color="normal" if net_profit >= 0 else "inverse")
+
+    st.markdown("---")
+    
+    # --- LOGGING FORM ---
+    form_col, ledger_col = st.columns([1, 1.5])
+    
+    with form_col:
+        st.markdown("### 📥 Log Property Activity")
+        rent_type = st.selectbox("Transaction Type", ["Rent Income", "Mortgage", "Insurance", "Maintenance/Expense"], key="rent_type_input")
+        rent_date = st.date_input("Date", value=today, key="rent_date_input")
+        rent_desc = st.text_input("Description / Notes", placeholder="e.g., October Rent, Plumbing Repair", key="rent_desc_input")
+        rent_amt = st.number_input("Amount ($)", min_value=0.0, value=0.0, step=50.0, format="%.2f", key="rent_amt_input")
+        
+        if st.button("Log Transaction", use_container_width=True):
+            if rent_amt > 0:
+                new_rent_row = pd.DataFrame([{
+                    "Date": rent_date.strftime("%Y-%m-%d"),
+                    "Type": rent_type,
+                    "Description": rent_desc,
+                    "Amount": rent_amt
+                }])
+                st.session_state.rental_ledger = pd.concat([st.session_state.rental_ledger, new_rent_row], ignore_index=True)
+                push_df_to_google("Rental", st.session_state.rental_ledger)
+                st.rerun()
+
+    with ledger_col:
+        st.markdown("### 📜 Property Ledger")
+        st.caption("Double-click any cell to edit, or select a row and press Delete to remove it.")
+        edited_rent_df = st.data_editor(
+            st.session_state.rental_ledger,
+            use_container_width=True,
+            num_rows="dynamic",
+            hide_index=True,
+            key="rental_ledger_editor"
+        )
+        
+        if st.button("Save Ledger Changes", use_container_width=True):
+            st.session_state.rental_ledger = edited_rent_df
+            push_df_to_google("Rental", st.session_state.rental_ledger)
+            st.rerun()
