@@ -11,7 +11,7 @@ if current_dir not in sys.path:
 # --- FOLDER IMPORTS ---
 from data.state import init_session_state, load_data_from_google
 from ui.theme import apply_custom_theme
-from ui.views import render_budget_dashboard, render_savings_dashboard
+from ui.views import render_budget_dashboard, render_savings_dashboard, render_rental_dashboard
 from ui.modals import (
     render_unified_income_splits_modal, 
     render_bills_modal, 
